@@ -9,8 +9,8 @@ export const getMeusPacs = () => {
 };
 
 // Add other PAC-related functions as needed
-// export const getAllPacs = () => api.get('/pacs');
+export const getAllPacs = () => api.get('/pacs'); // Uncommented this line
 // export const getPacById = (id) => api.get(`/pacs/${id}`);
 // export const createPac = (data) => api.post('/pacs', data);
-// export const updatePac = (id, data) => api.put(`/pacs/${id}`, data);
+export const updatePac = (id, data) => api.put(`/pacs/${id}`, data); // Added data parameter back
 // export const deletePac = (id) => api.delete(`/pacs/${id}`);
