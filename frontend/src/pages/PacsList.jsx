@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom'; // Importar useLocation
 import {
   Box,
   Paper,
@@ -37,6 +37,7 @@ import api from '../services/api';
 
 const PacsList = () => {
   const navigate = useNavigate();
+  const location = useLocation(); // Obter o objeto location
   const { user } = useAuth(); // Obter o usuário logado
   const [pacs, setPacs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,16 +46,19 @@ const PacsList = () => {
 
   useEffect(() => {
     fetchPacs();
-  }, []);
+  }, [location]); // Adicionar location como dependência
 
   const fetchPacs = async () => {
+    setLoading(true); // Iniciar loading ao buscar
+    setError(null); // Limpar erros anteriores
     try {
       const response = await api.get('/pacs');
       setPacs(response.data);
-      setLoading(false);
     } catch (err) {
       setError('Erro ao carregar PACs');
-      setLoading(false);
+      console.error("Erro detalhado:", err); // Logar o erro para depuração
+    } finally {
+      setLoading(false); // Finalizar loading independentemente do resultado
     }
   };
 
