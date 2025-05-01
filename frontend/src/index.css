@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Font is primarily managed by MUI ThemeProvider + CssBaseline */
+  line-height: 1.5;
+  font-weight: 400; /* Base font weight */
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  /* Font family is set by MUI ThemeProvider + CssBaseline using 'Inter' */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ajustes para Material-UI */
+/* Keep this if specific paper background override is needed, but theme defines it */
+/* .MuiPaper-root {
+  background-color: #ffffff !important;
+} */
+
+/* Button text-transform is handled in theme.js */
+/* .MuiButton-root {
+  text-transform: none !important;
+} */
+
+/* Remove @tailwind directives */
+
+html, body, #root {
+  height: 100%;
+  min-height: 100vh;
+  /* Background color is handled by MUI ThemeProvider + CssBaseline */
+  /* background-color: #f3f4f6; */
+}
+
+/* Font family is handled by MUI ThemeProvider + CssBaseline */
+/* body {
+  font-family: 'Inter', sans-serif;
+} */
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Garante que o conteúdo principal não fique atrás do Sidebar horizontal */
+/* This might be related to Layout.jsx, review if still needed after Layout refactor */
+.main-content {
+  padding-top: 104px; /* altura do Sidebar horizontal */
+}
