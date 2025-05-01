@@ -1,4 +1,4 @@
-const { Usuario } = require('../models');
+const { Usuario, Sequelize } = require('../models'); // Adicionar Sequelize para usar Op
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
@@ -147,39 +147,57 @@ exports.criarUsuario = async (req, res) => {
 exports.atualizarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, email, senha, cargo, role, ativo } = req.body;
-    
+    const { nome, senha, cargo, role, ativo } = req.body;
+
     const usuario = await Usuario.findByPk(id);
-    
+
     if (!usuario) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
     }
-    
-    // Verificar se o email já existe (se for alterado)
-    if (email && email !== usuario.email) {
-      const emailExistente = await Usuario.findOne({ where: { email } });
-      
-      if (emailExistente) {
-        return res.status(400).json({ message: 'Email já cadastrado' });
+
+    // Impedir alteração de email (removido da lógica de atualização abaixo)
+    if (req.body.email && req.body.email !== usuario.email) {
+      // Embora não vamos atualizar, podemos informar que a tentativa foi ignorada ou retornar erro
+      // Por simplicidade, vamos apenas ignorar a tentativa de alterar o email.
+      logger.warn(`Tentativa de alterar email do usuário ${id} para ${req.body.email} foi ignorada.`);
+    }
+
+    // Verificar se é o último admin ativo antes de alterar role ou status ativo
+    const isChangingRole = role && role !== usuario.role;
+    const isDeactivating = ativo === false && usuario.ativo === true;
+
+    if ((isChangingRole || isDeactivating) && usuario.role === 'ADMIN' && usuario.ativo) {
+      const adminCount = await Usuario.count({
+        where: {
+          role: 'ADMIN',
+          ativo: true,
+          id: { [Sequelize.Op.ne]: usuario.id } // Excluir o próprio usuário da contagem
+        }
+      });
+
+      // Se não houver outros admins ativos, impedir a alteração
+      if (adminCount === 0) {
+        return res.status(400).json({ message: 'Não é possível alterar o papel ou desativar o último administrador ativo.' });
       }
     }
-    
-    // Atualizar dados
+
+    // Atualizar dados (sem o email)
     await usuario.update({
       nome: nome || usuario.nome,
-      email: email || usuario.email,
-      senha: senha ? senha : usuario.senha, // A senha será hasheada pelo hook beforeUpdate
+      // email: email || usuario.email, // REMOVIDO - Não permitir alteração de email
+      // A senha será hasheada pelo hook beforeUpdate se 'senha' for fornecido no body
+      ...(senha && { senha: senha }), // Incluir senha apenas se fornecida
       cargo: cargo !== undefined ? cargo : usuario.cargo,
       role: role || usuario.role,
       ativo: ativo !== undefined ? ativo : usuario.ativo
     });
-    
+
     // Remover senha do retorno
     const { senha: _, ...usuarioAtualizado } = usuario.get({ plain: true });
-    
+
     return res.status(200).json(usuarioAtualizado);
   } catch (error) {
-    console.error('Erro ao atualizar usuário:', error);
+    logger.error(`Erro ao atualizar usuário ${req.params.id}:`, error);
     return res.status(500).json({ message: 'Erro ao atualizar usuário' });
   }
 };

@@ -135,7 +135,11 @@ const UsuarioForm = () => {
                   type="email"
                   value={formData.email}
                   onChange={handleChange}
-                  disabled={isSubmitting}
+                  disabled // Agora sempre desabilitado
+                  InputProps={{
+                    readOnly: true, // Adiciona estilo visual de apenas leitura
+                  }}
+                  helperText="O email não pode ser alterado."
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
