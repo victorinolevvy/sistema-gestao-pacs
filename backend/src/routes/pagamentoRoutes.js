@@ -5,6 +5,7 @@ const { auth } = require('../middleware/auth');
 const validators = require('../middleware/validators');
 const validationHandler = require('../middleware/validationHandler');
 const cache = require('../middleware/cache');
+const upload = require('../config/multerConfig'); // Importar multer configurado
 
 // Rotas para pagamentos
 router.get('/', auth, cache(300), pagamentoController.listarPagamentos);
@@ -12,7 +13,13 @@ router.get('/:id', auth, validators.pagamento.atualizar[0], validationHandler, c
 router.get('/pac/:pacId', auth, validators.pagamento.criar[0], validationHandler, cache(300), pagamentoController.listarPagamentosPorPac);
 router.get('/periodo/:mes/:ano', auth, validators.pagamento.listarPorPeriodo, validationHandler, cache(300), pagamentoController.listarPagamentosPorPeriodo);
 router.get('/resumo/:mes/:ano', auth, validators.pagamento.listarPorPeriodo, validationHandler, cache(300), pagamentoController.obterResumoPorProvincia);
-router.post('/', auth, validators.pagamento.criar, validationHandler, pagamentoController.criarPagamento);
+router.post('/',
+    auth,
+    upload.single('comprovativo'), // Middleware multer para o campo 'comprovativo'
+    validators.pagamento.criar,
+    validationHandler,
+    pagamentoController.criarPagamento
+);
 router.put('/:id', auth, validators.pagamento.atualizar, validationHandler, pagamentoController.atualizarPagamento);
 
 // Add new route for confirming/rejecting payments

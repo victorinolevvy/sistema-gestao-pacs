@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 const compression = require('compression');
+const path = require('path'); // Import path module
 const { limiter } = require('./middleware/rateLimiter');
 const agendadorService = require('./services/agendadorService');
 const winston = require('winston');
@@ -54,6 +55,9 @@ app.use(cors({
 // Middleware de parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Servir arquivos estáticos da pasta 'uploads'
+app.use('/uploads', express.static(path.join(__dirname, '..' , 'uploads'))); // Add this line
 
 // Rate limiting
 app.use(limiter);

@@ -15,7 +15,7 @@ import Dashboard from './pages/Dashboard';
 import PacsList from './pages/PacsList';
 import PacForm from './pages/PacForm';
 import PacDetails from './pages/PacDetails'; // Import the new component
-import PagamentosList from './pages/PagamentosList';
+import PaymentsList from './pages/PaymentsList'; // Use the MUI-based component
 // import PagamentoForm from './pages/PagamentoForm'; // Remove this import
 import PagamentoDetails from './pages/PagamentoDetails';
 import RegistrarPagamento from './pages/Pagamentos/RegistrarPagamento'; // Add this import
@@ -184,7 +184,7 @@ const App = () => {
                 path="/pagamentos" 
                 element={
                   <NonVisualizadorRoute>
-                    <PagamentosList />
+                    <PaymentsList />
                   </NonVisualizadorRoute>
                 } 
               />

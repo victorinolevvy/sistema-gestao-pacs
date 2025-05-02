@@ -21,12 +21,12 @@ const getDashboardData = async (req, res) => {
 
     // Atividades recentes
     console.log('Buscando atividades recentes...');
-    const atividadesRecentes = await Pac.findAll({ // Usar Pac
+    const atividadesRecentes = await Pac.findAll({
       limit: 5,
-      order: [['data_criacao', 'DESC']], // Corrigir ordenação para usar data_criacao
+      order: [['data_criacao', 'DESC']],
       include: [{
         model: Usuario,
-        as: 'usuario', // Corrected alias from 'usuarioGestor' to 'usuario'
+        as: 'gestor', // usar alias definido nos models
         attributes: ['nome']
       }]
     });
@@ -51,7 +51,7 @@ const getDashboardData = async (req, res) => {
         titulo: atividade.nome, // Usar nome do Pac como título (ou outro campo apropriado)
         status: atividade.status,
         data: atividade.data_criacao, // Usar data_criacao
-        usuario: atividade.usuario ? atividade.usuario.nome : 'Usuário Desconhecido' // Corrected to use 'usuario' alias
+        usuario: atividade.gestor ? atividade.gestor.nome : 'Usuário Desconhecido' // Corrected to use 'gestor' alias
       }))
     };
 

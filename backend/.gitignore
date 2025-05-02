@@ -1,0 +1,6 @@
+
+# ... existing ignores ...
+
+# Uploads
+/uploads/
+/backend/uploads/

@@ -18,15 +18,7 @@ import {
   Grid,
   Card,
   CardContent,
-  Avatar,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem
+  Avatar
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -38,18 +30,18 @@ import {
   TrendingUp as TrendingUpIcon,
   Visibility as VisibilityIcon
 } from '@mui/icons-material';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const PaymentsList = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canCreatePayment = user && ['GESTOR','ADMIN','SUPERVISOR'].includes(user.role);
   const [payments, setPayments] = useState([]);
   const [pacs, setPacs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [openDialog, setOpenDialog] = useState(false);
-  const [selectedPac, setSelectedPac] = useState('');
-  const [paymentValue, setPaymentValue] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -61,11 +53,13 @@ const PaymentsList = () => {
         api.get('/pagamentos'),
         api.get('/pacs')
       ]);
-      setPayments(paymentsResponse.data);
-      setPacs(pacsResponse.data);
-      setLoading(false);
+      const paymentsData = paymentsResponse.data;
+      const pacsData = pacsResponse.data;
+      setPayments(Array.isArray(paymentsData) ? paymentsData : []);
+      setPacs(Array.isArray(pacsData) ? pacsData : []);
     } catch (err) {
-      setError('Erro ao carregar dados');
+      setError('Erro ao carregar pagamentos');
+    } finally {
       setLoading(false);
     }
   };
@@ -81,23 +75,12 @@ const PaymentsList = () => {
     }
   };
 
-  const handleNewPayment = async () => {
-    try {
-      await api.post('/pagamentos', {
-        pac_id: selectedPac,
-        valor: parseFloat(paymentValue)
-      });
-      setOpenDialog(false);
-      fetchData();
-    } catch (err) {
-      setError('Erro ao registrar pagamento');
-    }
-  };
-
-  const filteredPayments = payments.filter(payment =>
-    payment.pac.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    payment.pac.provincia.nome.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPayments = Array.isArray(payments)
+    ? payments.filter(payment =>
+      payment.pac.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.pac.provincia.nome.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    : [];
 
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
@@ -105,14 +88,15 @@ const PaymentsList = () => {
         <Typography variant="h4" component="h1">
           Pagamentos
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setOpenDialog(true)}
-          sx={{ position: 'fixed', right: 32, top: 16, zIndex: 1000 }}
-        >
-          Novo Pagamento
-        </Button>
+        {canCreatePayment && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate('/pagamentos/registrar')}
+          >
+            Novo Pagamento
+          </Button>
+        )}
       </Box>
 
       <Grid container spacing={3} sx={{ mb: 3 }}>
@@ -125,10 +109,17 @@ const PaymentsList = () => {
                 </Avatar>
                 <Box>
                   <Typography variant="h6">
-                    {new Intl.NumberFormat('pt-BR', {
+                    {new Intl.NumberFormat('pt-MZ', { // Change locale to pt-MZ
                       style: 'currency',
-                      currency: 'BRL'
-                    }).format(payments.reduce((sum, p) => sum + p.valor, 0))}
+                      currency: 'MZN' // Change currency to MZN
+                    }).format(
+                      Array.isArray(payments)
+                        ? payments.reduce(
+                            (sum, p) => sum + (parseFloat(p.valor_pago || 0) + parseFloat(p.valor_regularizado || 0)),
+                            0
+                          )
+                        : 0
+                    )}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Total Pago
@@ -147,7 +138,7 @@ const PaymentsList = () => {
                 </Avatar>
                 <Box>
                   <Typography variant="h6">
-                    {payments.length}
+                    {Array.isArray(payments) ? payments.length : 0}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Pagamentos Registrados
@@ -166,10 +157,17 @@ const PaymentsList = () => {
                 </Avatar>
                 <Box>
                   <Typography variant="h6">
-                    {new Intl.NumberFormat('pt-BR', {
+                    {new Intl.NumberFormat('pt-MZ', { // Change locale to pt-MZ
                       style: 'currency',
-                      currency: 'BRL'
-                    }).format(payments.reduce((sum, p) => sum + p.valor, 0) / payments.length || 0)}
+                      currency: 'MZN' // Change currency to MZN
+                    }).format(
+                      Array.isArray(payments) && payments.length > 0
+                        ? payments.reduce(
+                            (sum, p) => sum + (parseFloat(p.valor_pago || 0) + parseFloat(p.valor_regularizado || 0)),
+                            0
+                          ) / payments.length
+                        : 0
+                    )}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Média por Pagamento
@@ -204,7 +202,7 @@ const PaymentsList = () => {
             <TableRow>
               <TableCell>PAC</TableCell>
               <TableCell>Província</TableCell>
-              <TableCell>Valor</TableCell>
+              <TableCell>Valor Pago (MZN)</TableCell>
               <TableCell>Data</TableCell>
               <TableCell>Status</TableCell>
               <TableCell align="right">Ações</TableCell>
@@ -216,13 +214,13 @@ const PaymentsList = () => {
                 <TableCell>{payment.pac.nome}</TableCell>
                 <TableCell>{payment.pac.provincia.nome}</TableCell>
                 <TableCell>
-                  {new Intl.NumberFormat('pt-BR', {
+                  {new Intl.NumberFormat('pt-MZ', {
                     style: 'currency',
-                    currency: 'BRL'
-                  }).format(payment.valor)}
+                    currency: 'MZN'
+                  }).format(parseFloat(payment.valor_pago || 0))}
                 </TableCell>
                 <TableCell>
-                  {new Date(payment.created_at).toLocaleDateString('pt-BR')}
+                  {new Date(payment.data_pagamento).toLocaleDateString('pt-BR')}
                 </TableCell>
                 <TableCell>
                   <Chip
@@ -258,42 +256,8 @@ const PaymentsList = () => {
           </TableBody>
         </Table>
       </TableContainer>
-
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
-        <DialogTitle>Novo Pagamento</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel>PAC</InputLabel>
-            <Select
-              value={selectedPac}
-              onChange={(e) => setSelectedPac(e.target.value)}
-              label="PAC"
-            >
-              {pacs.map((pac) => (
-                <MenuItem key={pac.id} value={pac.id}>
-                  {pac.nome} - {pac.provincia.nome}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <TextField
-            fullWidth
-            label="Valor"
-            type="number"
-            value={paymentValue}
-            onChange={(e) => setPaymentValue(e.target.value)}
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
-          <Button onClick={handleNewPayment} variant="contained">
-            Registrar
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };
 
-export default PaymentsList; 
+export default PaymentsList;

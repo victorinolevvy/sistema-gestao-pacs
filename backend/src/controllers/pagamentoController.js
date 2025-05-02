@@ -39,43 +39,46 @@ const determinarStatusPagamento = (valorPago, valorRegularizado, valorRendaMensa
 
 // Listar todos os pagamentos
 exports.listarPagamentos = async (req, res) => {
+  const usuario_id = req.user?.id;
+  const usuario_role = req.user?.role;
+  // Authorization
+  const allowedRoles = ['GESTOR','ADMIN','SUPERVISOR'];
+  if (!allowedRoles.includes(usuario_role)) {
+    return res.status(403).json({ message: 'Acesso negado' });
+  }
   try {
+    // Build include for Pac with filter for GESTOR
+    const pacInclude = {
+      model: Pac,
+      as: 'pac',
+      attributes: ['id','nome','gestor_id','valor_renda_mensal'],
+      include: [{ model: Provincia, as: 'provincia', attributes: ['id','nome','codigo'] }]
+    };
+    if (usuario_role === 'GESTOR') {
+      pacInclude.where = { gestor_id: usuario_id };
+    }
     const pagamentos = await Pagamento.findAll({
-      include: [
-        {
-          model: Pac,
-          as: 'pac',
-          attributes: ['id', 'nome', 'gestor_id', 'valor_renda_mensal'], // Include gestor_id
-          include: [
-            {
-              model: Provincia,
-              as: 'provincia',
-              attributes: ['id', 'nome', 'codigo']
-            }
-          ]
-        },
-        {
-          model: Usuario,
-          as: 'usuarioRegistro',
-          attributes: ['id', 'nome']
-        },
-        { // Add include for confirmation user
-          model: Usuario,
-          as: 'usuarioConfirmacao',
-          attributes: ['id', 'nome']
-        }
+      include: [pacInclude,
+        { model: Usuario, as: 'usuarioRegistro', attributes: ['id','nome'] },
+        { model: Usuario, as: 'usuarioConfirmacao', attributes: ['id','nome'] }
       ],
-      order: [['data_pagamento', 'DESC']]
+      order: [['data_pagamento','DESC']]
     });
     return res.status(200).json(pagamentos);
   } catch (error) {
-    console.error('Erro ao listar pagamentos:', error);
+    console.error('Erro ao listar pagamentos:',error);
     return res.status(500).json({ message: 'Erro ao listar pagamentos' });
   }
 };
 
 // Buscar pagamento por ID
 exports.buscarPagamentoPorId = async (req, res) => {
+  const usuario_id = req.user?.id;
+  const usuario_role = req.user?.role;
+  const allowedRoles = ['GESTOR','ADMIN','SUPERVISOR'];
+  if (!allowedRoles.includes(usuario_role)) {
+    return res.status(403).json({ message: 'Acesso negado' });
+  }
   try {
     const { id } = req.params;
     const pagamento = await Pagamento.findByPk(id, {
@@ -108,7 +111,9 @@ exports.buscarPagamentoPorId = async (req, res) => {
     if (!pagamento) {
       return res.status(404).json({ message: 'Pagamento não encontrado' });
     }
-
+    if (usuario_role === 'GESTOR' && pagamento.pac.gestor_id !== usuario_id) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
     return res.status(200).json(pagamento);
   } catch (error) {
     console.error('Erro ao buscar pagamento:', error);
@@ -118,8 +123,21 @@ exports.buscarPagamentoPorId = async (req, res) => {
 
 // Listar pagamentos por PAC
 exports.listarPagamentosPorPac = async (req, res) => {
+  const usuario_id = req.user?.id;
+  const usuario_role = req.user?.role;
+  const allowedRoles = ['GESTOR','ADMIN','SUPERVISOR'];
+  if (!allowedRoles.includes(usuario_role)) {
+    return res.status(403).json({ message: 'Acesso negado' });
+  }
   try {
     const { pacId } = req.params;
+    // If gestor, ensure they manage this PAC
+    if (usuario_role === 'GESTOR') {
+      const pac = await Pac.findByPk(pacId);
+      if (!pac || pac.gestor_id !== usuario_id) {
+        return res.status(403).json({ message: 'Acesso negado' });
+      }
+    }
 
     const pagamentos = await Pagamento.findAll({
       where: { pac_id: pacId },
@@ -159,41 +177,29 @@ exports.listarPagamentosPorPac = async (req, res) => {
 
 // Listar pagamentos por período
 exports.listarPagamentosPorPeriodo = async (req, res) => {
+  const usuario_id = req.user?.id;
+  const usuario_role = req.user?.role;
+  const allowedRoles = ['GESTOR','ADMIN','SUPERVISOR'];
+  if (!allowedRoles.includes(usuario_role)) {
+    return res.status(403).json({ message: 'Acesso negado' });
+  }
   try {
     const { mes, ano } = req.params;
-
+    // Build include for Pac with filter for GESTOR
+    const pacInclude = {
+      model: Pac,
+      as: 'pac',
+      attributes: ['id','nome','gestor_id','valor_renda_mensal'],
+      include: [{ model: Provincia, as: 'provincia', attributes: ['id','nome','codigo'] }]
+    };
+    if (usuario_role === 'GESTOR') {
+      pacInclude.where = { gestor_id: usuario_id };
+    }
     const pagamentos = await Pagamento.findAll({
-      where: {
-        mes_referencia: mes,
-        ano_referencia: ano
-      },
-      include: [
-        {
-          model: Pac,
-          as: 'pac',
-          attributes: ['id', 'nome', 'gestor_id', 'valor_renda_mensal'], // Include gestor_id
-          include: [
-            {
-              model: Provincia,
-              as: 'provincia',
-              attributes: ['id', 'nome', 'codigo']
-            }
-          ]
-        },
-        {
-          model: Usuario,
-          as: 'usuarioRegistro',
-          attributes: ['id', 'nome']
-        },
-        { // Add include for confirmation user
-          model: Usuario,
-          as: 'usuarioConfirmacao',
-          attributes: ['id', 'nome']
-        }
-      ],
-      order: [['data_pagamento', 'DESC']]
+      where: { mes_referencia: mes, ano_referencia: ano },
+      include: [pacInclude],
+      order: [['data_pagamento','DESC']]
     });
-
     return res.status(200).json(pagamentos);
   } catch (error) {
     console.error('Erro ao listar pagamentos por período:', error);
@@ -212,46 +218,34 @@ exports.criarPagamento = async (req, res) => {
       mes_referencia,
       ano_referencia,
       observacoes,
-      comprovativo_url // Add comprovativo_url
-      // status removido
+      // comprovativo_url removido do body, virá de req.file
     } = req.body;
 
     const usuario_id = req.user?.id;
-    const usuario_role = req.user?.role; // Assuming role is available in req.user
+    const usuario_role = req.user?.role;
 
+    // ... (validações de autenticação e autorização) ...
     if (!usuario_id) {
       return res.status(401).json({ message: 'Usuário não autenticado' });
     }
-
-    // Authorization: Only GESTOR can create payments
-    if (usuario_role !== 'GESTOR') {
-        return res.status(403).json({ message: 'Apenas gestores podem registrar pagamentos.' });
+    const allowedRoles = ['GESTOR', 'ADMIN', 'SUPERVISOR'];
+    if (!allowedRoles.includes(usuario_role)) {
+      return res.status(403).json({ message: 'Apenas gestores, administradores ou supervisores podem registrar pagamentos.' });
     }
-
     if (!pac_id || !mes_referencia || !ano_referencia) {
       return res.status(400).json({ message: 'PAC, mês e ano de referência são obrigatórios' });
     }
-
-    // Verify PAC exists and the GESTOR is assigned to it
-    const pac = await Pac.findByPk(pac_id, { attributes: ['id', 'valor_renda_mensal', 'gestor_id'] }); // Assuming gestor_id exists
+    // ... (verificação do PAC e pagamento existente) ...
+    const pac = await Pac.findByPk(pac_id, { attributes: ['id', 'valor_renda_mensal', 'gestor_id'] });
     if (!pac) {
       return res.status(404).json({ message: 'PAC não encontrado' });
     }
-
-    // Check if the logged-in GESTOR is assigned to this PAC
-    if (pac.gestor_id !== usuario_id) {
-        return res.status(403).json({ message: 'Você não tem permissão para registrar pagamentos para este PAC.' });
+    if (usuario_role === 'GESTOR' && pac.gestor_id !== usuario_id) {
+      return res.status(403).json({ message: 'Você não tem permissão para registrar pagamentos para este PAC.' });
     }
-
-    // Check if payment already exists for this PAC in the same period
     const pagamentoExistente = await Pagamento.findOne({
-      where: {
-        pac_id,
-        mes_referencia,
-        ano_referencia
-      }
+      where: { pac_id, mes_referencia, ano_referencia }
     });
-
     if (pagamentoExistente) {
       return res.status(400).json({
         message: 'Já existe um pagamento registrado para este PAC neste período',
@@ -259,7 +253,10 @@ exports.criarPagamento = async (req, res) => {
       });
     }
 
-    // Determine payment status (Pago, Pendente, etc.)
+
+    // Obter o caminho do arquivo do multer, se existir
+    const comprovativoPath = req.file ? `/uploads/comprovantes/${req.file.filename}` : null;
+
     const statusCalculado = determinarStatusPagamento(valor_pago, valor_regularizado, pac.valor_renda_mensal);
 
     const pagamento = await Pagamento.create({
@@ -270,46 +267,33 @@ exports.criarPagamento = async (req, res) => {
       mes_referencia,
       ano_referencia,
       observacoes,
-      comprovativo_url, // Save the proof URL
+      comprovativo_url: comprovativoPath, // Salvar o caminho relativo do arquivo
       status: statusCalculado,
-      usuario_id, // User who registered the payment
-      status_confirmacao: 'PENDENTE', // Initial confirmation status
-      confirmado_por_usuario_id: null, // Not confirmed yet
-      data_confirmacao: null // Not confirmed yet
+      usuario_id,
+      status_confirmacao: 'PENDENTE',
+      confirmado_por_usuario_id: null,
+      data_confirmacao: null
     });
 
-    // Fetch the complete payment details including associations
+    // ... (buscar pagamento completo e retornar) ...
     const pagamentoCompleto = await Pagamento.findByPk(pagamento.id, {
         include: [
-          {
-            model: Pac,
-            as: 'pac',
-            attributes: ['id', 'nome', 'gestor_id', 'valor_renda_mensal'], // Include gestor_id
-            include: [
-              {
-                model: Provincia,
-                as: 'provincia',
-                attributes: ['id', 'nome', 'codigo']
-              }
-            ]
-          },
-          {
-            model: Usuario,
-            as: 'usuarioRegistro',
-            attributes: ['id', 'nome']
-          },
-          { // Include confirmation user (will be null initially)
-            model: Usuario,
-            as: 'usuarioConfirmacao',
-            attributes: ['id', 'nome']
-          }
+          { model: Pac, as: 'pac', include: [{ model: Provincia, as: 'provincia' }] },
+          { model: Usuario, as: 'usuarioRegistro', attributes: ['id', 'nome'] },
+          { model: Usuario, as: 'usuarioConfirmacao', attributes: ['id', 'nome'] }
         ]
       });
+    return res.status(201).json(pagamentoCompleto);
 
-      return res.status(201).json(pagamentoCompleto);
   } catch (error) {
     console.error('Erro ao criar pagamento:', error);
-    // Check for specific Sequelize validation errors if needed
+    // Remover arquivo se o upload foi feito mas houve erro no DB
+    if (req.file) {
+        const fs = require('fs');
+        fs.unlink(req.file.path, (err) => {
+            if (err) console.error("Erro ao remover arquivo após falha:", err);
+        });
+    }
     return res.status(500).json({ message: 'Erro ao criar pagamento', error: error.message });
   }
 };

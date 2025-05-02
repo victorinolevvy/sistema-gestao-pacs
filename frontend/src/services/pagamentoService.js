@@ -1,9 +1,21 @@
 // filepath: frontend/src/services/pagamentoService.js
 import api from './api'; // Import the configured axios instance
 
-// Create a new payment record
-export const criarPagamento = (pagamentoData) => {
-    return api.post('/pagamentos', pagamentoData);
+// Função para criar um novo pagamento (agora recebe FormData)
+export const criarPagamento = async (formData) => {
+  try {
+    // Enviar FormData, o Axios/Navegador definirá Content-Type como multipart/form-data
+    const response = await api.post('/pagamentos', formData, {
+      headers: {
+        // Não defina Content-Type manualmente aqui, deixe o navegador/Axios fazer isso
+        // 'Content-Type': 'multipart/form-data', // <- REMOVER OU COMENTAR
+      },
+    });
+    return response; // Retorna a resposta completa
+  } catch (error) {
+    console.error('Erro ao criar pagamento no serviço:', error.response || error.message);
+    throw error; // Re-lança o erro para ser tratado no componente
+  }
 };
 
 // Confirm or Reject a payment

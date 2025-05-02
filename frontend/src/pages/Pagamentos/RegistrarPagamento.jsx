@@ -1,5 +1,5 @@
 // filepath: frontend/src/pages/Pagamentos/RegistrarPagamento.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Container,
     Box,
@@ -12,12 +12,17 @@ import {
     InputLabel,
     Grid,
     CircularProgress,
-    Alert
+    Alert,
+    Card,
+    CardContent,
+    CardHeader,
+    Input
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext'; // Import useAuth instead of AuthContext
+import { useAuth } from '../../context/AuthContext'; // Use the useAuth hook
 import { getMeusPacs } from '../../services/pacService'; // Assuming pacService exists
 import { criarPagamento } from '../../services/pagamentoService'; // Assuming pagamentoService exists
+import api from '../../services/api';
 
 const meses = [
     { value: 1, label: 'Janeiro' }, { value: 2, label: 'Fevereiro' }, { value: 3, label: 'Março' },
@@ -37,38 +42,57 @@ function RegistrarPagamento() {
     const [mesReferencia, setMesReferencia] = useState(new Date().getMonth() + 1); // Default to current month
     const [anoReferencia, setAnoReferencia] = useState(currentYear);
     const [observacoes, setObservacoes] = useState('');
-    const [comprovativoUrl, setComprovativoUrl] = useState(''); // Simple URL input for now
+    const [comprovativoFile, setComprovativoFile] = useState(null); // State para o arquivo
+    const fileInputRef = useRef(null); // Ref para o input de arquivo
     const [meusPacs, setMeusPacs] = useState([]);
     const [loadingPacs, setLoadingPacs] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    const { user } = useAuth(); // Use the useAuth hook
+    const { user, loading: authLoading } = useAuth(); // Use auth loading guard
     const navigate = useNavigate();
 
     useEffect(() => {
         const fetchPacs = async () => {
-            // Ensure user is loaded and is a GESTOR
-            if (user && user.role === 'GESTOR') {
-                try {
-                    // Assuming getMeusPacs fetches PACs assigned to the logged-in GESTOR
+            if (!user) return;
+            try {
+                let list = [];
+                if (user.role === 'GESTOR') {
                     const response = await getMeusPacs();
-                    setMeusPacs(response.data || []);
-                } catch (err) {
-                    console.error("Erro ao buscar PACs:", err);
-                    setError('Falha ao carregar seus PACs.');
-                } finally {
-                    setLoadingPacs(false);
+                    list = response.data || [];
+                } else if (['ADMIN','SUPERVISOR'].includes(user.role)) {
+                    const resp = await api.get('/pacs');
+                    list = resp.data || [];
                 }
-            } else if (user && user.role !== 'GESTOR') {
-                 setError('Apenas gestores podem registrar pagamentos.');
-                 setLoadingPacs(false);
+                setMeusPacs(list);
+            } catch (err) {
+                console.error("Erro ao buscar PACs:", err);
+                setError('Falha ao carregar PACs.');
+            } finally {
+                setLoadingPacs(false);
             }
-            // If user is not loaded yet, wait for AuthContext to provide it
         };
-
+         
         fetchPacs();
     }, [user]); // Re-run if user context changes
+
+    const handleFileChange = (event) => {
+        const file = event.target.files[0];
+        if (file && (file.type.startsWith('image/') || file.type === 'application/pdf')) {
+             if (file.size <= 5 * 1024 * 1024) { // 5MB limit (opcional, mas bom ter)
+                setComprovativoFile(file);
+                setError(''); // Limpar erro de arquivo
+             } else {
+                setError('Arquivo muito grande. O limite é 5MB.');
+                setComprovativoFile(null); // Limpar seleção
+                event.target.value = null; // Resetar input
+             }
+        } else {
+            setError('Tipo de arquivo inválido. Selecione PDF ou Imagem (JPG, PNG).');
+            setComprovativoFile(null); // Limpar seleção
+            event.target.value = null; // Resetar input
+        }
+    };
 
     const handleSubmit = async (event) => {
         event.preventDefault();
@@ -82,27 +106,35 @@ function RegistrarPagamento() {
             return;
         }
 
-        const pagamentoData = {
-            pac_id: parseInt(pacId, 10),
-            data_pagamento: dataPagamento,
-            valor_pago: parseFloat(valorPago || 0),
-            valor_regularizado: parseFloat(valorRegularizado || 0),
-            mes_referencia: parseInt(mesReferencia, 10),
-            ano_referencia: parseInt(anoReferencia, 10),
-            observacoes: observacoes,
-            comprovativo_url: comprovativoUrl,
-        };
+        // Criar FormData
+        const formData = new FormData();
+        formData.append('pac_id', pacId);
+        formData.append('data_pagamento', dataPagamento);
+        formData.append('valor_pago', valorPago || 0);
+        formData.append('valor_regularizado', valorRegularizado || 0);
+        formData.append('mes_referencia', mesReferencia);
+        formData.append('ano_referencia', anoReferencia);
+        formData.append('observacoes', observacoes);
+
+        // Adicionar o arquivo se ele existir
+        if (comprovativoFile) {
+            formData.append('comprovativo', comprovativoFile); // Nome do campo deve ser 'comprovativo'
+        }
 
         try {
-            const response = await criarPagamento(pagamentoData);
+            // Chamar o serviço atualizado que envia FormData
+            const response = await criarPagamento(formData);
             setSuccess(`Pagamento para o PAC ${response.data?.pac?.nome} registrado com sucesso! Status de confirmação: PENDENTE.`);
-            // Optionally reset form or navigate away
+            // Resetar campos e arquivo após sucesso
             // setPacId('');
             // setValorPago('');
             // setValorRegularizado('');
             // setObservacoes('');
-            // setComprovativoUrl('');
-            // navigate('/pagamentos'); // Or to PAC details page
+            setComprovativoFile(null);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = null; // Limpar o input de arquivo
+            }
+            // navigate('/pagamentos');
         } catch (err) {
             console.error("Erro ao registrar pagamento:", err);
             const errorMsg = err.response?.data?.message || 'Falha ao registrar pagamento.';
@@ -112,153 +144,204 @@ function RegistrarPagamento() {
         }
     };
 
-    if (loadingPacs) {
-        return <CircularProgress />;
+    if (authLoading || loadingPacs) {
+        return (
+            <Container sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
+                 <CircularProgress />
+            </Container>
+        );
     }
 
-     if (user?.role !== 'GESTOR') {
-         return <Alert severity="error">Acesso não autorizado. Apenas gestores podem acessar esta página.</Alert>;
+     if (user?.role !== 'GESTOR' && user?.role !== 'ADMIN' && user?.role !== 'SUPERVISOR') {
+         return (
+             <Container sx={{ mt: 4 }}>
+                 <Alert severity="error">Acesso não autorizado. Apenas gestores, administradores ou supervisores podem acessar esta página.</Alert>
+             </Container>
+         );
      }
 
-    if (meusPacs.length === 0 && !loadingPacs) {
-         return <Alert severity="warning">Você não está associado a nenhum PAC para registrar pagamentos.</Alert>;
+    if (user.role === 'GESTOR' && meusPacs.length === 0 && !loadingPacs) {
+         return (
+             <Container sx={{ mt: 4 }}>
+                 <Alert severity="warning">Você não está associado a nenhum PAC para registrar pagamentos.</Alert>
+             </Container>
+         );
     }
 
-
     return (
-        <Container maxWidth="md">
-            <Box sx={{ my: 4 }}>
-                <Typography variant="h4" component="h1" gutterBottom>
-                    Registrar Novo Pagamento
-                </Typography>
-                <form onSubmit={handleSubmit}>
-                    <Grid container spacing={3}>
-                        <Grid item xs={12}>
-                            <FormControl fullWidth required>
-                                <InputLabel id="pac-select-label">PAC</InputLabel>
-                                <Select
-                                    labelId="pac-select-label"
-                                    id="pac-select"
-                                    value={pacId}
-                                    label="PAC"
-                                    onChange={(e) => setPacId(e.target.value)}
-                                    disabled={loadingPacs}
-                                >
-                                    <MenuItem value="">
-                                        <em>Selecione um PAC</em>
-                                    </MenuItem>
-                                    {meusPacs.map((pac) => (
-                                        <MenuItem key={pac.id} value={pac.id}>
-                                            {pac.nome} (Província: {pac.provincia?.nome || 'N/A'})
+        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+            <Card>
+                <CardHeader
+                    title="Registrar Novo Pagamento"
+                    action={
+                        <Button onClick={() => navigate('/pagamentos')} variant="outlined">
+                            Voltar para Lista
+                        </Button>
+                    }
+                />
+                <CardContent>
+                    {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                    {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+                    <form onSubmit={handleSubmit}>
+                        <Grid container spacing={3}>
+                            <Grid item xs={12}>
+                                <FormControl fullWidth required variant="outlined">
+                                    <InputLabel id="pac-select-label">PAC</InputLabel>
+                                    <Select
+                                        labelId="pac-select-label"
+                                        id="pac-select"
+                                        value={pacId}
+                                        label="PAC"
+                                        onChange={(e) => setPacId(e.target.value)}
+                                        disabled={loadingPacs}
+                                    >
+                                        <MenuItem value="">
+                                            <em>Selecione um PAC</em>
                                         </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
+                                        {meusPacs.map((pac) => (
+                                            <MenuItem key={pac.id} value={pac.id}>
+                                                {pac.nome} (Província: {pac.provincia?.nome || 'N/A'})
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
 
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                label="Data do Pagamento"
-                                type="date"
-                                value={dataPagamento}
-                                onChange={(e) => setDataPagamento(e.target.value)}
-                                InputLabelProps={{ shrink: true }}
-                                fullWidth
-                                required
-                            />
-                        </Grid>
-                         <Grid item xs={12} sm={6}>
-                             <TextField
-                                label="Comprovativo (URL)"
-                                value={comprovativoUrl}
-                                onChange={(e) => setComprovativoUrl(e.target.value)}
-                                fullWidth
-                                helperText="Insira o link para o comprovativo (upload futuro)"
-                            />
-                        </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    label="Data do Pagamento"
+                                    type="date"
+                                    value={dataPagamento}
+                                    onChange={(e) => setDataPagamento(e.target.value)}
+                                    InputLabelProps={{ shrink: true }}
+                                    fullWidth
+                                    required
+                                    variant="outlined"
+                                />
+                            </Grid>
 
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                label="Valor Pago"
-                                type="number"
-                                value={valorPago}
-                                onChange={(e) => setValorPago(e.target.value)}
-                                inputProps={{ step: "0.01" }}
-                                fullWidth
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={6}>
-                            <TextField
-                                label="Valor Regularizado"
-                                type="number"
-                                value={valorRegularizado}
-                                onChange={(e) => setValorRegularizado(e.target.value)}
-                                inputProps={{ step: "0.01" }}
-                                fullWidth
-                            />
-                        </Grid>
+                            {/* Campo de Upload de Comprovativo */}
+                            <Grid item xs={12} sm={6}>
+                                <FormControl fullWidth variant="outlined">
+                                    {/* Input escondido */}
+                                    <Input
+                                        type="file"
+                                        id="comprovativo-upload"
+                                        inputRef={fileInputRef} // Associar ref
+                                        onChange={handleFileChange}
+                                        sx={{ display: 'none' }}
+                                        inputProps={{ accept: "image/*,application/pdf" }} // Aceitar imagens e PDF
+                                    />
+                                    {/* Botão que ativa o input */}
+                                    <label htmlFor="comprovativo-upload">
+                                        <Button
+                                            variant="outlined"
+                                            component="span" // Faz o botão agir como label
+                                            fullWidth
+                                            sx={{ height: '56px' }} // Altura padrão do TextField outlined
+                                        >
+                                            {comprovativoFile ? `Arquivo: ${comprovativoFile.name}` : 'Carregar Comprovativo'}
+                                        </Button>
+                                    </label>
+                                    <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5 }}>
+                                        (PDF ou Imagem, máx 5MB)
+                                    </Typography>
+                                </FormControl>
+                            </Grid>
 
-                        <Grid item xs={12} sm={6}>
-                             <FormControl fullWidth required>
-                                <InputLabel id="mes-ref-label">Mês Referência</InputLabel>
-                                <Select
-                                    labelId="mes-ref-label"
-                                    value={mesReferencia}
-                                    label="Mês Referência"
-                                    onChange={(e) => setMesReferencia(e.target.value)}
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    label="Valor Pago (MZN)"
+                                    type="number"
+                                    value={valorPago}
+                                    onChange={(e) => setValorPago(e.target.value)}
+                                    inputProps={{ step: "0.01", min: "0" }}
+                                    fullWidth
+                                    variant="outlined"
+                                />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField
+                                    label="Valor Regularizado (MZN)"
+                                    type="number"
+                                    value={valorRegularizado}
+                                    onChange={(e) => setValorRegularizado(e.target.value)}
+                                    inputProps={{ step: "0.01", min: "0" }}
+                                    fullWidth
+                                    variant="outlined"
+                                />
+                            </Grid>
+
+                            <Grid item xs={12} sm={6}>
+                                 <FormControl fullWidth required variant="outlined">
+                                    <InputLabel id="mes-ref-label">Mês Referência</InputLabel>
+                                    <Select
+                                        labelId="mes-ref-label"
+                                        value={mesReferencia}
+                                        label="Mês Referência"
+                                        onChange={(e) => setMesReferencia(e.target.value)}
+                                    >
+                                        {meses.map((mes) => (
+                                            <MenuItem key={mes.value} value={mes.value}>
+                                                {mes.label}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                             <Grid item xs={12} sm={6}>
+                                 <FormControl fullWidth required variant="outlined">
+                                    <InputLabel id="ano-ref-label">Ano Referência</InputLabel>
+                                    <Select
+                                        labelId="ano-ref-label"
+                                        value={anoReferencia}
+                                        label="Ano Referência"
+                                        onChange={(e) => setAnoReferencia(e.target.value)}
+                                    >
+                                        {anos.map((ano) => (
+                                            <MenuItem key={ano} value={ano}>
+                                                {ano}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+
+                            <Grid item xs={12}>
+                                <TextField
+                                    label="Observações"
+                                    multiline
+                                    rows={3}
+                                    value={observacoes}
+                                    onChange={(e) => setObservacoes(e.target.value)}
+                                    fullWidth
+                                    variant="outlined"
+                                />
+                            </Grid>
+
+                            <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    onClick={() => navigate('/pagamentos')}
+                                    disabled={submitting}
                                 >
-                                    {meses.map((mes) => (
-                                        <MenuItem key={mes.value} value={mes.value}>
-                                            {mes.label}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
-                        </Grid>
-                         <Grid item xs={12} sm={6}>
-                             <FormControl fullWidth required>
-                                <InputLabel id="ano-ref-label">Ano Referência</InputLabel>
-                                <Select
-                                    labelId="ano-ref-label"
-                                    value={anoReferencia}
-                                    label="Ano Referência"
-                                    onChange={(e) => setAnoReferencia(e.target.value)}
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="contained"
+                                    color="primary"
+                                    disabled={submitting || loadingPacs || !pacId}
+                                    startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : null}
                                 >
-                                    {anos.map((ano) => (
-                                        <MenuItem key={ano} value={ano}>
-                                            {ano}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
+                                    {submitting ? 'Registrando...' : 'Registrar Pagamento'}
+                                </Button>
+                            </Grid>
                         </Grid>
-
-                        <Grid item xs={12}>
-                            <TextField
-                                label="Observações"
-                                multiline
-                                rows={3}
-                                value={observacoes}
-                                onChange={(e) => setObservacoes(e.target.value)}
-                                fullWidth
-                            />
-                        </Grid>
-
-                        <Grid item xs={12}>
-                            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-                            {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                color="primary"
-                                disabled={submitting || loadingPacs || !pacId}
-                            >
-                                {submitting ? <CircularProgress size={24} /> : 'Registrar Pagamento'}
-                            </Button>
-                        </Grid>
-                    </Grid>
-                </form>
-            </Box>
+                    </form>
+                </CardContent>
+            </Card>
         </Container>
     );
 }
