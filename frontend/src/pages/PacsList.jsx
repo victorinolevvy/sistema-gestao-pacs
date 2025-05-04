@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom'; // Importar useLocation
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
+  Typography,
+  Card,
+  CardContent,
+  Avatar,
+  Grid,
   Paper,
   Table,
   TableBody,
@@ -9,30 +14,28 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Typography,
   Button,
   IconButton,
-  Chip,
   TextField,
   InputAdornment,
-  Grid,
-  Card,
-  CardContent,
-  CardHeader,
-  Avatar,
-  Divider
+  Chip,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
-  Search as SearchIcon,
   Add as AddIcon,
+  Search as SearchIcon,
+  Description as DescriptionIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Description as DescriptionIcon,
-  Payment as PaymentIcon,
-  Assessment as AssessmentIcon,
-  Visibility as VisibilityIcon
+  Visibility as VisibilityIcon,
+  Business as BusinessIcon,
+  Construction as ConstructionIcon,
+  Engineering as EngineeringIcon,
+  DoNotDisturbOn as DoNotDisturbOnIcon,
+  PersonOff as PersonOffIcon
 } from '@mui/icons-material';
-import { useAuth } from '../context/AuthContext'; // Importar useAuth
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const PacsList = () => {
@@ -91,20 +94,59 @@ const PacsList = () => {
   // Define roles que podem criar/editar/excluir PACs
   const canManagePacs = user && ['ADMIN', 'SUPERVISOR'].includes(user.role);
 
+  // Calcular KPIs
+  const totalPacs = pacs.length;
+  const pacsSemGestor = pacs.filter(pac => !pac.gestor_id).length;
+  const pacsPorStatus = pacs.reduce((acc, pac) => {
+    acc[pac.status] = (acc[pac.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Definir cores e ícones por status
+  const statusConfig = {
+    'Em Operação': { color: 'success.main', icon: <BusinessIcon /> },
+    'Construção': { color: 'info.main', icon: <ConstructionIcon /> },
+    'Reabilitação': { color: 'warning.main', icon: <EngineeringIcon /> },
+    'Inoperacional': { color: 'error.main', icon: <DoNotDisturbOnIcon /> }
+  };
+
+  const renderStatusCards = () => {
+    return ['Em Operação', 'Construção', 'Reabilitação', 'Inoperacional'].map(status => (
+      <Grid item xs={12} md={3} key={status}>
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Avatar sx={{ bgcolor: statusConfig[status].color, mr: 2 }}>
+                {statusConfig[status].icon}
+              </Avatar>
+              <Box>
+                <Typography variant="h6">
+                  {pacsPorStatus[status] || 0}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  PACs em {status}
+                </Typography>
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+      </Grid>
+    ));
+  };
+
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
       <Box sx={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
-        alignItems: 'center', 
+        alignItems: 'center',
         mb: 3,
-        flexWrap: 'wrap', // Allow wrapping on smaller screens
-        gap: 2 // Add gap between items
+        flexWrap: 'wrap',
+        gap: 2
       }}>
         <Typography variant="h4" component="h1">
           Lista de PACs
         </Typography>
-        {/* Renderizar botão apenas se o usuário tiver permissão */}
         {canManagePacs && (
           <Button
             variant="contained"
@@ -116,63 +158,70 @@ const PacsList = () => {
         )}
       </Box>
 
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-                  <DescriptionIcon />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6">{pacs.length}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Total de PACs
-                  </Typography>
+      <Box sx={{ mb: 3 }}>
+        <Grid container spacing={3}>
+          {/* Card Total de PACs */}
+          <Grid item xs={12} md={6} lg={3}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                    <DescriptionIcon />
+                  </Avatar>
+                  <Box>
+                    <Typography variant="h6">{totalPacs}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Total de PACs
+                    </Typography>
+                  </Box>
                 </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Avatar sx={{ bgcolor: 'success.main', mr: 2 }}>
-                  <PaymentIcon />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6">
-                    {pacs.filter(pac => pac.status === 'PAGO').length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    PACs Pagos
-                  </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Card PACs sem Gestor */}
+          <Grid item xs={12} md={6} lg={3}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Avatar sx={{ bgcolor: 'warning.main', mr: 2 }}>
+                    <PersonOffIcon />
+                  </Avatar>
+                  <Box>
+                    <Typography variant="h6">{pacsSemGestor}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      PACs sem Gestor
+                    </Typography>
+                  </Box>
                 </Box>
-              </Box>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Cards de Status */}
+          {Object.entries(statusConfig).map(([status, config]) => (
+            <Grid item xs={12} md={6} lg={3} key={status}>
+              <Card>
+                <CardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Avatar sx={{ bgcolor: config.color, mr: 2 }}>
+                      {config.icon}
+                    </Avatar>
+                    <Box>
+                      <Typography variant="h6">
+                        {pacsPorStatus[status] || 0}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        PACs em {status}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
         </Grid>
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Avatar sx={{ bgcolor: 'warning.main', mr: 2 }}>
-                  <AssessmentIcon />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6">
-                    {pacs.filter(pac => pac.status === 'PENDENTE').length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    PACs Pendentes
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <TextField
