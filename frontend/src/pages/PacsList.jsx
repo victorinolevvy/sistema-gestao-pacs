@@ -37,8 +37,8 @@ import api from '../services/api';
 
 const PacsList = () => {
   const navigate = useNavigate();
-  const location = useLocation(); // Obter o objeto location
-  const { user } = useAuth(); // Obter o usuário logado
+  const location = useLocation();
+  const { user } = useAuth();
   const [pacs, setPacs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -46,19 +46,22 @@ const PacsList = () => {
 
   useEffect(() => {
     fetchPacs();
-  }, [location]); // Adicionar location como dependência
+  }, [location.key]);
 
   const fetchPacs = async () => {
-    setLoading(true); // Iniciar loading ao buscar
-    setError(null); // Limpar erros anteriores
+    setLoading(true);
+    setError(null);
     try {
-      const response = await api.get('/pacs');
+      const response = await api.get('/pacs', {
+        headers: { 'Cache-Control': 'no-cache' },
+        params: { _t: new Date().getTime() }
+      });
       setPacs(response.data);
     } catch (err) {
       setError('Erro ao carregar PACs');
-      console.error("Erro detalhado:", err); // Logar o erro para depuração
+      console.error("Erro detalhado:", err);
     } finally {
-      setLoading(false); // Finalizar loading independentemente do resultado
+      setLoading(false);
     }
   };
 
@@ -66,18 +69,23 @@ const PacsList = () => {
     if (window.confirm('Tem certeza que deseja excluir este PAC?')) {
       try {
         await api.delete(`/pacs/${id}`);
-        fetchPacs();
+        await fetchPacs(); // Recarregar dados após exclusão
       } catch (err) {
         setError('Erro ao excluir PAC');
       }
     }
   };
 
-  // Update filter logic to include manager name using pac.gestor
+  const handleNavigateAndRefresh = (path) => {
+    navigate(path);
+    fetchPacs(); // Recarregar dados ao navegar
+  };
+
+  // Update filter logic to include manager name
   const filteredPacs = pacs.filter(pac =>
     pac.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (pac.provincia && pac.provincia.nome.toLowerCase().includes(searchTerm.toLowerCase())) || // Add check for provincia existence
-    (pac.gestor && pac.gestor.nome.toLowerCase().includes(searchTerm.toLowerCase())) // Use pac.gestor here
+    (pac.provincia?.nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (pac.gestorAtual?.nome || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Define roles que podem criar/editar/excluir PACs
@@ -198,11 +206,9 @@ const PacsList = () => {
           </TableHead>
           <TableBody>
             {filteredPacs.map((pac) => (
-              <TableRow key={pac.id}>
-                <TableCell>{pac.nome}</TableCell>
-                <TableCell>{pac.provincia?.nome || '-'}</TableCell> {/* Add safe navigation for provincia */}
-                {/* Display manager name using pac.gestor, handle cases where there's no manager */}
-                <TableCell>{pac.gestor ? pac.gestor.nome : '-'}</TableCell>
+              <TableRow key={pac.id}>                <TableCell>{pac.nome}</TableCell>
+                <TableCell>{pac.provincia?.nome || '-'}</TableCell>
+                <TableCell>{pac.gestorAtual?.nome || '-'}</TableCell>
                 <TableCell>
                   {/* Corrigir campo e moeda */}
                   {pac.valor_renda_mensal != null ? new Intl.NumberFormat('pt-MZ', { // Usar locale pt-MZ

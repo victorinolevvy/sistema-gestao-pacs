@@ -37,13 +37,12 @@ const anos = Array.from({ length: 5 }, (_, i) => currentYear - i); // Last 5 yea
 function RegistrarPagamento() {
     const [pacId, setPacId] = useState('');
     const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().split('T')[0]); // Default to today
-    const [valorPago, setValorPago] = useState('');
-    const [valorRegularizado, setValorRegularizado] = useState('');
+    const [valorPago, setValorPago] = useState(''); // Only keep total valor pago
     const [mesReferencia, setMesReferencia] = useState(new Date().getMonth() + 1); // Default to current month
     const [anoReferencia, setAnoReferencia] = useState(currentYear);
     const [observacoes, setObservacoes] = useState('');
-    const [comprovativoFile, setComprovativoFile] = useState(null); // State para o arquivo
-    const fileInputRef = useRef(null); // Ref para o input de arquivo
+    const [comprovativoFile, setComprovativoFile] = useState(null);
+    const fileInputRef = useRef(null);
     const [meusPacs, setMeusPacs] = useState([]);
     const [loadingPacs, setLoadingPacs] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -110,8 +109,7 @@ function RegistrarPagamento() {
         const formData = new FormData();
         formData.append('pac_id', pacId);
         formData.append('data_pagamento', dataPagamento);
-        formData.append('valor_pago', valorPago || 0);
-        formData.append('valor_regularizado', valorRegularizado || 0);
+        formData.append('valor_pago', valorPago || 0); // Send only the total amount paid
         formData.append('mes_referencia', mesReferencia);
         formData.append('ano_referencia', anoReferencia);
         formData.append('observacoes', observacoes);
@@ -126,10 +124,8 @@ function RegistrarPagamento() {
             const response = await criarPagamento(formData);
             setSuccess(`Pagamento para o PAC ${response.data?.pac?.nome} registrado com sucesso! Status de confirmação: PENDENTE.`);
             // Resetar campos e arquivo após sucesso
-            // setPacId('');
-            // setValorPago('');
-            // setValorRegularizado('');
-            // setObservacoes('');
+            setValorPago(''); // Reset valor pago
+            setObservacoes('');
             setComprovativoFile(null);
             if (fileInputRef.current) {
                 fileInputRef.current.value = null; // Limpar o input de arquivo
@@ -250,29 +246,21 @@ function RegistrarPagamento() {
                                 </FormControl>
                             </Grid>
 
+                            {/* Campo Valor Pago (Total) */}
                             <Grid item xs={12} sm={6}>
                                 <TextField
-                                    label="Valor Pago (MZN)"
+                                    label="Valor Pago (MZN)" // Simplified label
                                     type="number"
                                     value={valorPago}
                                     onChange={(e) => setValorPago(e.target.value)}
                                     inputProps={{ step: "0.01", min: "0" }}
                                     fullWidth
                                     variant="outlined"
-                                />
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <TextField
-                                    label="Valor Regularizado (MZN)"
-                                    type="number"
-                                    value={valorRegularizado}
-                                    onChange={(e) => setValorRegularizado(e.target.value)}
-                                    inputProps={{ step: "0.01", min: "0" }}
-                                    fullWidth
-                                    variant="outlined"
+                                    required // Make it required if a payment must have a value
                                 />
                             </Grid>
 
+                            {/* Mês/Ano Referência - Spanning more columns now */}
                             <Grid item xs={12} sm={6}>
                                  <FormControl fullWidth required variant="outlined">
                                     <InputLabel id="mes-ref-label">Mês Referência</InputLabel>

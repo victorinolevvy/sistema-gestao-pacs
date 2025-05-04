@@ -14,6 +14,21 @@ import {
   Pie,
   Cell
 } from 'recharts';
+import {
+  Container,
+  Typography,
+  Card,
+  CardContent,
+  CardHeader,
+  Grid,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Button,
+  CircularProgress,
+  Box // Import Box for layout
+} from '@mui/material'; // Import Material UI components
 
 const Relatorios = () => {
   const navigate = useNavigate();
@@ -21,7 +36,7 @@ const Relatorios = () => {
   const [error, setError] = useState('');
   const [resumoProvincias, setResumoProvincias] = useState([]);
   const [tipoRelatorio, setTipoRelatorio] = useState('mensal');
-  
+
   // Opções para meses
   const meses = [
     { valor: 1, nome: 'Janeiro' },
@@ -78,12 +93,13 @@ const Relatorios = () => {
   
   useEffect(() => {
     carregarDados();
-  }, []);
+  }, []); // Run once on mount
   
   // Função para carregar os dados com base no tipo de relatório selecionado
   const carregarDados = async () => {
     try {
       setLoading(true);
+      setError(''); // Clear previous errors
       let dados = [];
       
       switch (tipoRelatorio) {
@@ -99,13 +115,17 @@ const Relatorios = () => {
         case 'anual':
           dados = await carregarDadosAnuais(filtros.ano);
           break;
+        default:
+          throw new Error('Tipo de relatório inválido');
       }
       
-      setResumoProvincias(dados);
+      // Ensure data is always an array
+      setResumoProvincias(Array.isArray(dados) ? dados : []);
       setLoading(false);
     } catch (err) {
       console.error(err);
-      setError('Erro ao carregar dados para o relatório');
+      setError('Erro ao carregar dados para o relatório. Verifique a consola para mais detalhes.');
+      setResumoProvincias([]); // Clear data on error
       setLoading(false);
     }
   };
@@ -118,29 +138,23 @@ const Relatorios = () => {
   
   const carregarDadosTrimestre = async (trimestre, ano) => {
     const mesesDoTrimestre = obterMesesDoTrimestre(trimestre);
-    const promessas = mesesDoTrimestre.map(mes => api.get(`/pagamentos/resumo/${mes}/${ano}`));
+    const promessas = mesesDoTrimestre.map(mes => api.get(`/pagamentos/resumo/${mes}/${ano}`).catch(err => { console.error(`Erro ao buscar mês ${mes}:`, err); return { data: [] }; })); // Handle individual errors
     const resultados = await Promise.all(promessas);
-    
-    // Combinar os resultados de todos os meses do trimestre
     return consolidarDados(resultados.map(r => r.data));
   };
   
   const carregarDadosSemestre = async (semestre, ano) => {
     const mesesDoSemestre = obterMesesDoSemestre(semestre);
-    const promessas = mesesDoSemestre.map(mes => api.get(`/pagamentos/resumo/${mes}/${ano}`));
+    const promessas = mesesDoSemestre.map(mes => api.get(`/pagamentos/resumo/${mes}/${ano}`).catch(err => { console.error(`Erro ao buscar mês ${mes}:`, err); return { data: [] }; })); // Handle individual errors
     const resultados = await Promise.all(promessas);
-    
-    // Combinar os resultados de todos os meses do semestre
     return consolidarDados(resultados.map(r => r.data));
   };
   
   const carregarDadosAnuais = async (ano) => {
-    const promessas = Array.from({ length: 12 }, (_, i) => 
-      api.get(`/pagamentos/resumo/${i + 1}/${ano}`)
+    const promessas = Array.from({ length: 12 }, (_, i) =>
+      api.get(`/pagamentos/resumo/${i + 1}/${ano}`).catch(err => { console.error(`Erro ao buscar mês ${i + 1}:`, err); return { data: [] }; }) // Handle individual errors
     );
     const resultados = await Promise.all(promessas);
-    
-    // Combinar os resultados de todos os meses do ano
     return consolidarDados(resultados.map(r => r.data));
   };
   
@@ -150,22 +164,27 @@ const Relatorios = () => {
     
     // Iterar sobre todos os arrays de dados
     arrayDeDados.forEach(dados => {
+      if (!Array.isArray(dados)) return; // Skip if data is not an array
       dados.forEach(item => {
+        if (!item || typeof item !== 'object' || !item.id) return; // Skip invalid items
         const provinciaId = item.id;
         
         if (!dadosConsolidados[provinciaId]) {
           dadosConsolidados[provinciaId] = {
             id: provinciaId,
-            nome: item.nome,
+            nome: item.nome || 'Desconhecido',
+            totalPago: 0,
+            totalDevido: 0,
+            // Add other fields if needed from your API response, e.g., valor_previsto
             valor_previsto: 0,
-            valor_pago: 0,
             valor_regularizado: 0,
-            total_pacs: item.total_pacs
+            total_pacs: item.total_pacs || 0
           };
         }
         
-        dadosConsolidados[provinciaId].valor_previsto += parseFloat(item.valor_previsto || 0);
-        dadosConsolidados[provinciaId].valor_pago += parseFloat(item.valor_pago || 0);
+        // Use the correct keys from your API response
+        dadosConsolidados[provinciaId].totalPago += parseFloat(item.valor_pago || 0);
+        dadosConsolidados[provinciaId].totalDevido += parseFloat(item.valor_previsto || 0); // Assuming valor_previsto is totalDevido
         dadosConsolidados[provinciaId].valor_regularizado += parseFloat(item.valor_regularizado || 0);
       });
     });
@@ -173,426 +192,303 @@ const Relatorios = () => {
     return Object.values(dadosConsolidados);
   };
   
-  const handleFiltroChange = (e) => {
-    const { name, value } = e.target;
+  const handleFilterChange = (event) => {
+    const { name, value } = event.target;
     setFiltros(prev => ({ ...prev, [name]: value }));
   };
   
-  const aplicarFiltros = () => {
-    carregarDados();
-  };
-  
-  const handleTipoRelatorioChange = (e) => {
-    setTipoRelatorio(e.target.value);
+  const handleTipoRelatorioChange = (event) => {
+    setTipoRelatorio(event.target.value);
+    // Reset filters when type changes? Optional, depends on desired UX
+    // setFiltros({ ...initialFilters });
   };
   
   // Função para formatar valores em moeda local
   const formatarMoeda = (valor) => {
-    return parseFloat(valor).toLocaleString('pt-MZ', {
+    // Ensure valor is a number before formatting
+    const numericValue = parseFloat(valor);
+    if (isNaN(numericValue)) {
+      return 'N/A'; // Or some other placeholder for invalid numbers
+    }
+    return numericValue.toLocaleString('pt-MZ', {
       style: 'currency',
       currency: 'MZN'
     });
   };
   
-  // Calcular totais
+  // Calcular totais - Adjust keys based on consolidarDados output
   const calcularTotais = () => {
     return resumoProvincias.reduce((acc, provincia) => {
-      acc.valor_previsto += parseFloat(provincia.valor_previsto || 0);
-      acc.valor_pago += parseFloat(provincia.valor_pago || 0);
+      acc.totalPago += parseFloat(provincia.totalPago || 0);
+      acc.totalDevido += parseFloat(provincia.totalDevido || 0);
       acc.valor_regularizado += parseFloat(provincia.valor_regularizado || 0);
       acc.total_pacs += parseInt(provincia.total_pacs || 0);
       return acc;
-    }, { valor_previsto: 0, valor_pago: 0, valor_regularizado: 0, total_pacs: 0 });
+    }, { totalPago: 0, totalDevido: 0, valor_regularizado: 0, total_pacs: 0 });
   };
   
-  // Preparar dados para o gráfico de barras
+  // Preparar dados para o gráfico de barras - Adjust keys
   const dadosGraficoBarras = resumoProvincias.map(item => ({
     nome: item.nome,
-    'Valor Previsto': parseFloat(item.valor_previsto || 0),
-    'Valor Pago': parseFloat(item.valor_pago || 0),
-    'Valor Regularizado': parseFloat(item.valor_regularizado || 0)
+    'Total Pago': item.totalPago,
+    'Total Devido': item.totalDevido,
+    'Valor Regularizado': item.valor_regularizado
   }));
   
-  // Preparar dados para o gráfico de pizza (percentual de pagamentos)
+  // Preparar dados para o gráfico de pizza (percentual de pagamentos) - Adjust keys
   const totais = calcularTotais();
   const dadosGraficoPizza = [
-    { name: 'Pago', value: totais.valor_pago },
-    { name: 'Pendente', value: Math.max(0, totais.valor_previsto - totais.valor_pago - totais.valor_regularizado) },
+    { name: 'Pago', value: totais.totalPago },
+    { name: 'Pendente', value: Math.max(0, totais.totalDevido - totais.totalPago - totais.valor_regularizado) },
     { name: 'Regularizado', value: totais.valor_regularizado }
-  ];
-  
-  // Renderizar controles de filtro conforme o tipo de relatório
-  const renderizarFiltros = () => {
-    switch (tipoRelatorio) {
-      case 'mensal':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Mês
-              </label>
-              <select
-                name="mes"
-                value={filtros.mes}
-                onChange={handleFiltroChange}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                {meses.map(mes => (
-                  <option key={mes.valor} value={mes.valor}>
-                    {mes.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ano
-              </label>
-              <select
-                name="ano"
-                value={filtros.ano}
-                onChange={handleFiltroChange}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                {anos.map(ano => (
-                  <option key={ano} value={ano}>
-                    {ano}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        );
-      
-      case 'trimestral':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Trimestre
-              </label>
-              <select
-                name="trimestre"
-                value={filtros.trimestre}
-                onChange={handleFiltroChange}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                <option value="1">1º Trimestre (Jan-Mar)</option>
-                <option value="2">2º Trimestre (Abr-Jun)</option>
-                <option value="3">3º Trimestre (Jul-Set)</option>
-                <option value="4">4º Trimestre (Out-Dez)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ano
-              </label>
-              <select
-                name="ano"
-                value={filtros.ano}
-                onChange={handleFiltroChange}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                {anos.map(ano => (
-                  <option key={ano} value={ano}>
-                    {ano}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        );
-      
-      case 'semestral':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Semestre
-              </label>
-              <select
-                name="semestre"
-                value={filtros.semestre}
-                onChange={handleFiltroChange}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                <option value="1">1º Semestre (Jan-Jun)</option>
-                <option value="2">2º Semestre (Jul-Dez)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ano
-              </label>
-              <select
-                name="ano"
-                value={filtros.ano}
-                onChange={handleFiltroChange}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                {anos.map(ano => (
-                  <option key={ano} value={ano}>
-                    {ano}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        );
-      
-      case 'anual':
-        return (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Ano
-            </label>
-            <select
-              name="ano"
-              value={filtros.ano}
-              onChange={handleFiltroChange}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-            >
-              {anos.map(ano => (
-                <option key={ano} value={ano}>
-                  {ano}
-                </option>
-              ))}
-            </select>
-          </div>
-        );
-      
-      default:
-        return null;
-    }
-  };
-  
-  // Formatar o título do relatório
-  const obterTituloRelatorio = () => {
-    switch (tipoRelatorio) {
-      case 'mensal':
-        return `Relatório Mensal: ${meses.find(m => m.valor == filtros.mes)?.nome} de ${filtros.ano}`;
-      case 'trimestral':
-        return `Relatório Trimestral: ${filtros.trimestre}º Trimestre de ${filtros.ano}`;
-      case 'semestral':
-        return `Relatório Semestral: ${filtros.semestre}º Semestre de ${filtros.ano}`;
-      case 'anual':
-        return `Relatório Anual: ${filtros.ano}`;
-      default:
-        return 'Relatório';
-    }
-  };
+  ].filter(item => item.value > 0); // Filter out zero values for better visualization
   
   if (loading && resumoProvincias.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-2xl font-semibold text-gray-700">Carregando...</div>
-      </div>
+      <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh' }}>
+        <CircularProgress />
+      </Container>
     );
   }
   
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-blue-600 text-white shadow">
-        <div className="container mx-auto px-4 py-4">
-          <h1 className="text-xl font-bold">Relatórios</h1>
-        </div>
-      </header>
-      
-      <main className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">{obterTituloRelatorio()}</h2>
-          <button
-            onClick={() => navigate('/pagamentos')}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded"
-          >
-            Voltar para Pagamentos
-          </button>
-        </div>
-        
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
-            {error}
-          </div>
-        )}
-        
-        {/* Seletor de tipo de relatório e filtros */}
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <h3 className="text-lg font-semibold mb-4">Filtros</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tipo de Relatório
-              </label>
-              <select
-                value={tipoRelatorio}
-                onChange={handleTipoRelatorioChange}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                <option value="mensal">Mensal</option>
-                <option value="trimestral">Trimestral</option>
-                <option value="semestral">Semestral</option>
-                <option value="anual">Anual</option>
-              </select>
-            </div>
-            
-            {/* Renderiza os filtros específicos para cada tipo de relatório */}
-            <div className="col-span-3">
-              {renderizarFiltros()}
-            </div>
-          </div>
-          
-          <div className="flex justify-end">
-            <button
-              onClick={aplicarFiltros}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-            >
-              Gerar Relatório
-            </button>
-          </div>
-        </div>
-        
-        {/* Cards de resumo */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Valor Total Previsto</h3>
-            <p className="text-2xl font-bold text-blue-600">{formatarMoeda(totais.valor_previsto)}</p>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Valor Total Pago</h3>
-            <p className="text-2xl font-bold text-green-600">{formatarMoeda(totais.valor_pago)}</p>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Valor Total Regularizado</h3>
-            <p className="text-2xl font-bold text-orange-600">{formatarMoeda(totais.valor_regularizado)}</p>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Taxa de Pagamento</h3>
-            <p className="text-2xl font-bold text-purple-600">
-              {totais.valor_previsto > 0 
-                ? `${((totais.valor_pago / totais.valor_previsto) * 100).toFixed(1)}%` 
-                : '0%'}
-            </p>
-          </div>
-        </div>
-        
-        {/* Gráficos */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold mb-4">Pagamentos por Província</h3>
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
-                <BarChart
-                  data={dadosGraficoBarras}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Typography variant="h4" component="h1" gutterBottom>
+        Relatórios
+      </Typography>
+
+      {/* Card de Filtros */}
+      <Card sx={{ mb: 3 }}>
+        <CardHeader title="Filtros" />
+        <CardContent>
+          <Grid container spacing={3} alignItems="flex-end">
+            {/* Seletor de Tipo de Relatório */}
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControl fullWidth variant="outlined">
+                <InputLabel id="tipo-relatorio-label">Tipo de Relatório</InputLabel>
+                <Select
+                  labelId="tipo-relatorio-label"
+                  id="tipo-relatorio-select"
+                  value={tipoRelatorio}
+                  label="Tipo de Relatório"
+                  onChange={handleTipoRelatorioChange}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="nome" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => formatarMoeda(value)} />
-                  <Legend />
-                  <Bar dataKey="Valor Previsto" fill="#8884d8" />
-                  <Bar dataKey="Valor Pago" fill="#82ca9d" />
-                  <Bar dataKey="Valor Regularizado" fill="#ffc658" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold mb-4">Distribuição de Pagamentos</h3>
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie
-                    data={dadosGraficoPizza}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={true}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    nameKey="name"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
-                  >
-                    {dadosGraficoPizza.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => formatarMoeda(value)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-        
-        {/* Tabela de dados */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-white">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="py-3 px-4 text-left">Província</th>
-                  <th className="py-3 px-4 text-center">Total PACs</th>
-                  <th className="py-3 px-4 text-right">Valor Previsto</th>
-                  <th className="py-3 px-4 text-right">Valor Pago</th>
-                  <th className="py-3 px-4 text-right">Valor Regularizado</th>
-                  <th className="py-3 px-4 text-right">% Pagamento</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {resumoProvincias.map((provincia) => {
-                  const percentualPagamento = provincia.valor_previsto > 0 
-                    ? ((provincia.valor_pago / provincia.valor_previsto) * 100).toFixed(1)
-                    : 0;
-                    
-                  return (
-                    <tr key={provincia.id}>
-                      <td className="py-3 px-4">{provincia.nome}</td>
-                      <td className="py-3 px-4 text-center">{provincia.total_pacs}</td>
-                      <td className="py-3 px-4 text-right">{formatarMoeda(provincia.valor_previsto)}</td>
-                      <td className="py-3 px-4 text-right">{formatarMoeda(provincia.valor_pago)}</td>
-                      <td className="py-3 px-4 text-right">{formatarMoeda(provincia.valor_regularizado)}</td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`px-2 py-1 rounded ${
-                          percentualPagamento >= 90 ? 'bg-green-100 text-green-800' : 
-                          percentualPagamento >= 70 ? 'bg-yellow-100 text-yellow-800' : 
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {percentualPagamento}%
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr className="bg-gray-50 font-bold">
-                  <td className="py-3 px-4">TOTAL</td>
-                  <td className="py-3 px-4 text-center">{totais.total_pacs}</td>
-                  <td className="py-3 px-4 text-right">{formatarMoeda(totais.valor_previsto)}</td>
-                  <td className="py-3 px-4 text-right">{formatarMoeda(totais.valor_pago)}</td>
-                  <td className="py-3 px-4 text-right">{formatarMoeda(totais.valor_regularizado)}</td>
-                  <td className="py-3 px-4 text-right">
-                    <span className={`px-2 py-1 rounded ${
-                      totais.valor_previsto > 0 && ((totais.valor_pago / totais.valor_previsto) * 100) >= 90 
-                        ? 'bg-green-100 text-green-800' 
-                        : totais.valor_previsto > 0 && ((totais.valor_pago / totais.valor_previsto) * 100) >= 70 
-                        ? 'bg-yellow-100 text-yellow-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {totais.valor_previsto > 0 
-                        ? ((totais.valor_pago / totais.valor_previsto) * 100).toFixed(1) 
-                        : 0}%
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
-    </div>
+                  <MenuItem value="mensal">Mensal</MenuItem>
+                  <MenuItem value="trimestral">Trimestral</MenuItem>
+                  <MenuItem value="semestral">Semestral</MenuItem>
+                  <MenuItem value="anual">Anual</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Filtros Condicionais */}
+            {tipoRelatorio === 'mensal' && (
+              <>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel id="mes-label">Mês</InputLabel>
+                    <Select
+                      labelId="mes-label"
+                      name="mes"
+                      value={filtros.mes}
+                      label="Mês"
+                      onChange={handleFilterChange}
+                    >
+                      {meses.map(mes => (
+                        <MenuItem key={mes.valor} value={mes.valor}>{mes.nome}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel id="ano-label">Ano</InputLabel>
+                    <Select
+                      labelId="ano-label"
+                      name="ano"
+                      value={filtros.ano}
+                      label="Ano"
+                      onChange={handleFilterChange}
+                    >
+                      {anos.map(ano => (
+                        <MenuItem key={ano} value={ano}>{ano}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </>
+            )}
+
+            {tipoRelatorio === 'trimestral' && (
+              <>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel id="trimestre-label">Trimestre</InputLabel>
+                    <Select
+                      labelId="trimestre-label"
+                      name="trimestre"
+                      value={filtros.trimestre}
+                      label="Trimestre"
+                      onChange={handleFilterChange}
+                    >
+                      {[1, 2, 3, 4].map(trimestre => (
+                        <MenuItem key={trimestre} value={trimestre}>{trimestre}º Trimestre</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                 <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel id="ano-label">Ano</InputLabel>
+                    <Select
+                      labelId="ano-label"
+                      name="ano"
+                      value={filtros.ano}
+                      label="Ano"
+                      onChange={handleFilterChange}
+                    >
+                      {anos.map(ano => (
+                        <MenuItem key={ano} value={ano}>{ano}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </>
+            )}
+
+             {tipoRelatorio === 'semestral' && (
+              <>
+                <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel id="semestre-label">Semestre</InputLabel>
+                    <Select
+                      labelId="semestre-label"
+                      name="semestre"
+                      value={filtros.semestre}
+                      label="Semestre"
+                      onChange={handleFilterChange}
+                    >
+                      {[1, 2].map(semestre => (
+                        <MenuItem key={semestre} value={semestre}>{semestre}º Semestre</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                 <Grid item xs={12} sm={6} md={3}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel id="ano-label">Ano</InputLabel>
+                    <Select
+                      labelId="ano-label"
+                      name="ano"
+                      value={filtros.ano}
+                      label="Ano"
+                      onChange={handleFilterChange}
+                    >
+                      {anos.map(ano => (
+                        <MenuItem key={ano} value={ano}>{ano}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </>
+            )}
+
+            {tipoRelatorio === 'anual' && (
+              <Grid item xs={12} sm={6} md={3}>
+                 <FormControl fullWidth variant="outlined">
+                    <InputLabel id="ano-label">Ano</InputLabel>
+                    <Select
+                      labelId="ano-label"
+                      name="ano"
+                      value={filtros.ano}
+                      label="Ano"
+                      onChange={handleFilterChange}
+                    >
+                      {anos.map(ano => (
+                        <MenuItem key={ano} value={ano}>{ano}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+              </Grid>
+            )}
+
+            {/* Botão Aplicar Filtros */}
+            <Grid item xs={12} md={3} sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+              <Button variant="contained" color="primary" onClick={carregarDados} disabled={loading}>
+                {loading ? <CircularProgress size={24} color="inherit" /> : 'Aplicar Filtros'}
+              </Button>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      {/* Seção de Gráficos */}
+      {loading ? (
+         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+           <CircularProgress />
+         </Box>
+      ) : error ? (
+        <Typography color="error" sx={{ mt: 2 }}>{error}</Typography>
+      ) : resumoProvincias.length === 0 ? (
+         <Typography sx={{ mt: 2 }}>Nenhum dado encontrado para os filtros selecionados.</Typography>
+      ) : (
+        <Grid container spacing={3}>
+          {/* Gráfico de Barras */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardHeader title="Pagamentos por Província" />
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={dadosGraficoBarras} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="nome" />
+                    {/* Adjust YAxis formatting if needed */}
+                    <YAxis tickFormatter={(value) => formatarMoeda(value).replace(/\s*MZN/,'')} />
+                    <Tooltip formatter={(value, name) => [formatarMoeda(value), name]} />
+                    <Legend />
+                    {/* Use the adjusted keys from dadosGraficoBarras */}
+                    <Bar dataKey="Total Pago" fill="#8884d8" name="Total Pago" />
+                    <Bar dataKey="Total Devido" fill="#82ca9d" name="Total Devido" />
+                     {/* Add Bar for 'Valor Regularizado' if needed */}
+                     {/* <Bar dataKey="Valor Regularizado" fill="#ffc658" name="Valor Regularizado" /> */}
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Gráfico de Pizza */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardHeader title="Distribuição Geral de Pagamentos" />
+              <CardContent>
+                 <ResponsiveContainer width="100%" height={300}>
+                   <PieChart>
+                     <Pie
+                       data={dadosGraficoPizza}
+                       cx="50%"
+                       cy="50%"
+                       labelLine={false}
+                       outerRadius={80}
+                       fill="#8884d8"
+                       dataKey="value"
+                       nameKey="name"
+                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                     >
+                       {dadosGraficoPizza.map((entry, index) => (
+                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                       ))}
+                     </Pie>
+                     <Tooltip formatter={(value) => formatarMoeda(value)} />
+                     <Legend />
+                   </PieChart>
+                 </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+    </Container>
   );
 };
 

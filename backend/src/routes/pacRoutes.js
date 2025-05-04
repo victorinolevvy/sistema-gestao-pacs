@@ -6,10 +6,10 @@ const validators = require('../middleware/validators');
 const validationHandler = require('../middleware/validationHandler');
 const cache = require('../middleware/cache');
 
-// Rotas para PACs
-router.get('/', auth, cache(300), pacController.listarPacs);
-router.get('/:id', auth, validators.pac.atualizar[0], validationHandler, cache(300), pacController.buscarPacPorId);
-router.get('/provincia/:provinciaId', auth, validators.pac.atualizar[0], validationHandler, cache(300), pacController.listarPacsPorProvincia);
+// Rotas para PACs - diminuir o tempo de cache para 60 segundos
+router.get('/', auth, cache(60), pacController.listarPacs);
+router.get('/provincia/:provinciaId', auth, validators.pac.atualizar[0], validationHandler, cache(60), pacController.listarPacsPorProvincia);
+router.get('/:id', auth, validators.pac.atualizar[0], validationHandler, cache(60), pacController.buscarPacPorId);
 router.post('/', auth, validators.pac.criar, validationHandler, pacController.criarPac);
 router.put('/:id', auth, validators.pac.atualizar, validationHandler, pacController.atualizarPac);
 router.delete('/:id', auth, validators.pac.atualizar[0], validationHandler, pacController.removerPac);

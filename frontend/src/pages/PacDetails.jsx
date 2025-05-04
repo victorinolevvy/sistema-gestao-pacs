@@ -180,7 +180,7 @@ const PacDetails = () => {
                  <Grid item xs={12} md={6}>
                    <Typography variant="subtitle1" gutterBottom><strong>Gestor:</strong></Typography>
                    {/* Use gestor based on updated model */}
-                   <Typography>{pac.gestor?.nome || 'Sem Gestor Associado'}</Typography>
+                   <Typography>{pac.gestorAtual?.nome || 'Sem Gestor Associado'}</Typography>
                  </Grid>
                  <Grid item xs={12} md={6}>
                    <Typography variant="subtitle1" gutterBottom><strong>Status:</strong></Typography>

@@ -31,6 +31,7 @@ fs
     db[model.name] = model;
   });
 
+// Call associate method for each model that has one
 Object.keys(db).forEach(modelName => {
   if (db[modelName].associate) {
     db[modelName].associate(db);

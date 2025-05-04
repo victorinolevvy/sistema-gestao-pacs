@@ -1,37 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // Added useRef
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
+import { formatarMoeda, formatarData } from '../utils/formatters'; // Import formatters
+import { DownloadSimple } from '@phosphor-icons/react'; // Import icon for download
 
 // Componente para o status do pagamento
 const StatusBadge = ({ status }) => {
   let bgColor = '';
-  
+  let text = status || 'Não definido';
+
   switch (status) {
-    case 'Pago':
+    case 'PAGO':
       bgColor = 'bg-green-100 text-green-800';
+      text = 'Pago';
       break;
-    case 'Pendente':
+    case 'PENDENTE':
       bgColor = 'bg-yellow-100 text-yellow-800';
+      text = 'Pendente';
       break;
-    case 'Regularizado':
+    case 'PAGO_PARCIALMENTE': // Added
       bgColor = 'bg-blue-100 text-blue-800';
+      text = 'Pago Parcialmente';
       break;
-    case 'Atrasado':
+    case 'ATRASADO': // Keep or remove depending on backend logic
       bgColor = 'bg-red-100 text-red-800';
+      text = 'Atrasado'; // Or maybe map to PENDENTE/PAGO_PARCIALMENTE?
       break;
+    case 'VALOR_DEVIDO_INVALIDO': // Added
+        bgColor = 'bg-orange-100 text-orange-800';
+        text = 'Valor Inválido';
+        break;
+    // Removed 'Regularizado' as it might be covered by PAGO/PAGO_PARCIALMENTE
     default:
       bgColor = 'bg-gray-100 text-gray-800';
   }
-  
+
   return (
     <span className={`px-2 py-1 rounded-full text-xs font-medium ${bgColor}`}>
-      {status || 'Não definido'}
+      {text}
     </span>
   );
 };
 
 // Componente para o card de filtros
 const FilterCard = ({ 
+  // ... existing props ...
   provincias, 
   pacs, 
   filtro, 
@@ -108,10 +121,12 @@ const FilterCard = ({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Todos</option>
-              <option value="Pago">Pago</option>
-              <option value="Pendente">Pendente</option>
-              <option value="Regularizado">Regularizado</option>
-              <option value="Atrasado">Atrasado</option>
+              <option value="PAGO">Pago</option>
+              <option value="PENDENTE">Pendente</option>
+              <option value="PAGO_PARCIALMENTE">Pago Parcialmente</option>
+              {/* <option value="ATRASADO">Atrasado</option> */}
+              <option value="VALOR_DEVIDO_INVALIDO">Valor Inválido</option>
+              {/* Removed Regularizado */}
             </select>
           </div>
         </div>
@@ -170,6 +185,7 @@ const FilterCard = ({
 };
 
 const PagamentosList = () => {
+  // ... existing state variables ...
   const navigate = useNavigate();
   const location = useLocation();
   const [pagamentos, setPagamentos] = useState([]);
@@ -178,22 +194,14 @@ const PagamentosList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
-  
-  // Estado para controle de paginação
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina, setItensPorPagina] = useState(10);
   const [totalPaginas, setTotalPaginas] = useState(1);
-  
-  // Estado para ordenação
   const [ordenacao, setOrdenacao] = useState({
-    campo: 'data_pagamento',
+    campo: 'data_pagamento', // Default sort field
     direcao: 'desc'
   });
-  
-  // Estado para busca rápida
   const [buscaRapida, setBuscaRapida] = useState('');
-  
-  // Estado para filtros
   const [filtro, setFiltro] = useState({
     provincia: '',
     pac: '',
@@ -201,8 +209,9 @@ const PagamentosList = () => {
     ano: '',
     status: ''
   });
-  
-  // Opções para meses
+  const timeoutRef = useRef(null); // Use useRef
+
+  // ... meses and anos arrays remain the same ...
   const meses = [
     { valor: 1, nome: 'Janeiro' },
     { valor: 2, nome: 'Fevereiro' },
@@ -217,16 +226,14 @@ const PagamentosList = () => {
     { valor: 11, nome: 'Novembro' },
     { valor: 12, nome: 'Dezembro' }
   ];
-  
-  // Opções para anos (últimos 5 anos)
   const anos = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
-  
+
+  // ... useEffect to load initial data ...
   useEffect(() => {
     async function loadData() {
       try {
         setLoading(true);
         
-        // Carregar dados de províncias e PACs para filtros
         const [provinciasResponse, pacsResponse] = await Promise.all([
           api.get('/provincias'),
           api.get('/pacs')
@@ -235,32 +242,21 @@ const PagamentosList = () => {
         setProvincias(provinciasResponse.data);
         setPacs(pacsResponse.data);
         
-        // Definindo valores padrão para os filtros
         const dataAtual = new Date();
         const mesAtual = dataAtual.getMonth() + 1;
         const anoAtual = dataAtual.getFullYear();
         
-        // Verificar se há parâmetros na URL
         const params = new URLSearchParams(location.search);
-        const provinciaParam = params.get('provincia');
-        const pacParam = params.get('pac');
-        const mesParam = params.get('mes');
-        const anoParam = params.get('ano');
-        const statusParam = params.get('status');
-        
-        // Usar parâmetros da URL ou valores padrão
         const filtrosIniciais = {
-          provincia: provinciaParam || '',
-          pac: pacParam || '',
-          mes: mesParam || mesAtual,
-          ano: anoParam || anoAtual,
-          status: statusParam || ''
+          provincia: params.get('provincia') || '',
+          pac: params.get('pac') || '',
+          mes: params.get('mes') || mesAtual,
+          ano: params.get('ano') || anoAtual,
+          status: params.get('status') || ''
         };
         
         setFiltro(filtrosIniciais);
-        
-        // Carregar pagamentos com os filtros
-        await carregarPagamentos(filtrosIniciais);
+        await carregarPagamentos(filtrosIniciais, 1, itensPorPagina, ordenacao); // Pass pagination/sort
         
         setLoading(false);
       } catch (err) {
@@ -271,91 +267,53 @@ const PagamentosList = () => {
     }
     
     loadData();
-  }, [location]);
-  
-  // Função para carregar pagamentos com base nos filtros
-  const carregarPagamentos = async (filtrosAtuais = filtro) => {
+  // Depend on location, itensPorPagina to reload if these change
+  }, [location, itensPorPagina]);
+
+  // Função para carregar pagamentos com base nos filtros, paginação e ordenação
+  const carregarPagamentos = async (
+    filtrosAtuais = filtro, 
+    pagina = paginaAtual, 
+    limite = itensPorPagina, 
+    ordem = ordenacao
+  ) => {
     try {
       setLoading(true);
       
-      let url = `/pagamentos`;
+      // Build query parameters
+      const params = {
+        page: pagina,
+        limit: limite,
+        sortBy: ordem.campo,
+        sortOrder: ordem.direcao,
+        search: buscaRapida.trim(), // Add search term
+        provinciaId: filtrosAtuais.provincia,
+        pacId: filtrosAtuais.pac,
+        mes: filtrosAtuais.mes,
+        ano: filtrosAtuais.ano,
+        status: filtrosAtuais.status
+      };
+
+      // Remove empty params
+      Object.keys(params).forEach(key => (params[key] === '' || params[key] === null || params[key] === undefined) && delete params[key]);
+
+      const response = await api.get(`/pagamentos`, { params });
       
-      // Se tiver mês e ano, busca por período
-      if (filtrosAtuais.mes && filtrosAtuais.ano) {
-        url = `/pagamentos/periodo/${filtrosAtuais.mes}/${filtrosAtuais.ano}`;
-      }
-      
-      const response = await api.get(url);
-      let pagamentosFiltrados = response.data;
-      
-      // Aplicando filtros adicionais no frontend
-      if (filtrosAtuais.provincia) {
-        pagamentosFiltrados = pagamentosFiltrados.filter(pagamento => 
-          pagamento.pac?.provincia_id === parseInt(filtrosAtuais.provincia)
-        );
-      }
-      
-      if (filtrosAtuais.pac) {
-        pagamentosFiltrados = pagamentosFiltrados.filter(pagamento => 
-          pagamento.pac_id === parseInt(filtrosAtuais.pac)
-        );
-      }
-      
-      if (filtrosAtuais.status) {
-        pagamentosFiltrados = pagamentosFiltrados.filter(pagamento => 
-          pagamento.status === filtrosAtuais.status
-        );
-      }
-      
-      // Aplicar busca rápida se houver
-      if (buscaRapida.trim()) {
-        const termoBusca = buscaRapida.toLowerCase();
-        pagamentosFiltrados = pagamentosFiltrados.filter(pagamento => 
-          pagamento.pac?.nome?.toLowerCase().includes(termoBusca) ||
-          pagamento.pac?.provincia?.nome?.toLowerCase().includes(termoBusca) ||
-          pagamento.observacoes?.toLowerCase().includes(termoBusca)
-        );
-      }
-      
-      // Ordenar os pagamentos
-      pagamentosFiltrados.sort((a, b) => {
-        const valorA = a[ordenacao.campo];
-        const valorB = b[ordenacao.campo];
-        
-        // Tratamento para valores nulos ou indefinidos
-        if (!valorA && !valorB) return 0;
-        if (!valorA) return 1;
-        if (!valorB) return -1;
-        
-        // Ordenar strings
-        if (typeof valorA === 'string') {
-          if (ordenacao.direcao === 'asc') {
-            return valorA.localeCompare(valorB);
-          } else {
-            return valorB.localeCompare(valorA);
-          }
-        }
-        
-        // Ordenar números e datas
-        if (ordenacao.direcao === 'asc') {
-          return valorA - valorB;
-        } else {
-          return valorB - valorA;
-        }
-      });
-      
-      // Configurar paginação
-      setTotalPaginas(Math.ceil(pagamentosFiltrados.length / itensPorPagina));
-      
-      setPagamentos(pagamentosFiltrados);
+      setPagamentos(response.data.pagamentos || []);
+      setTotalPaginas(response.data.totalPages || 1);
+      setPaginaAtual(response.data.currentPage || 1);
       setLoading(false);
     } catch (err) {
       console.error(err);
-      setError('Erro ao aplicar filtros');
+      setError('Erro ao carregar ou filtrar pagamentos');
+      setPagamentos([]); // Clear data on error
+      setTotalPaginas(1);
+      setPaginaAtual(1);
       setLoading(false);
     }
   };
-  
+
+  // ... handleFilterChange, handlePacsPorProvincia remain the same ...
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFiltro(prev => ({ ...prev, [name]: value }));
@@ -365,58 +323,52 @@ const PagamentosList = () => {
     if (!filtro.provincia) return pacs;
     return pacs.filter(pac => pac.provincia_id == filtro.provincia);
   };
-  
+
   const aplicarFiltros = () => {
-    setPaginaAtual(1);
-    carregarPagamentos();
-    
-    // Atualizar a URL com os parâmetros de filtro
+    setPaginaAtual(1); // Reset to first page when applying filters
+    // Update URL
     const params = new URLSearchParams();
     if (filtro.provincia) params.set('provincia', filtro.provincia);
     if (filtro.pac) params.set('pac', filtro.pac);
     if (filtro.mes) params.set('mes', filtro.mes);
     if (filtro.ano) params.set('ano', filtro.ano);
     if (filtro.status) params.set('status', filtro.status);
-    
-    navigate({
-      pathname: location.pathname,
-      search: params.toString()
-    });
+    navigate({ pathname: location.pathname, search: params.toString() });
+    // Reload data is handled by useEffect dependency on location
   };
-  
+
   // Função para mudar a página
   const mudarPagina = (pagina) => {
-    setPaginaAtual(pagina);
+    if (pagina >= 1 && pagina <= totalPaginas) {
+      setPaginaAtual(pagina);
+      carregarPagamentos(filtro, pagina, itensPorPagina, ordenacao); // Reload data for new page
+    }
   };
-  
+
   // Função para mudar a ordenação
   const alterarOrdenacao = (campo) => {
-    setOrdenacao(prev => ({
-      campo,
-      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
-    }));
+    const novaDirecao = ordenacao.campo === campo && ordenacao.direcao === 'asc' ? 'desc' : 'asc';
+    const novaOrdenacao = { campo, direcao: novaDirecao };
+    setOrdenacao(novaOrdenacao);
+    carregarPagamentos(filtro, 1, itensPorPagina, novaOrdenacao); // Reload data with new sort, reset to page 1
   };
-  
+
   // Função para busca rápida
   const handleBuscaRapida = (e) => {
-    setBuscaRapida(e.target.value);
-    // Reset para a primeira página quando buscar
-    setPaginaAtual(1);
-    
-    // Debounce para não fazer muitas buscas
+    const novoTermo = e.target.value;
+    setBuscaRapida(novoTermo);
+
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
-    
+
     timeoutRef.current = setTimeout(() => {
-      carregarPagamentos();
-    }, 300);
+      setPaginaAtual(1); // Reset page on search
+      carregarPagamentos(filtro, 1, itensPorPagina, ordenacao); // Reload data with search term
+    }, 500); // Debounce search
   };
-  
-  // Referência para o timeout da busca
-  const timeoutRef = React.useRef(null);
-  
-  // Função para excluir um pagamento
+
+  // ... handleExcluirPagamento, confirmarExclusao remain the same ...
   const handleExcluirPagamento = async (id) => {
     setConfirmDelete(id);
   };
@@ -426,45 +378,29 @@ const PagamentosList = () => {
     
     try {
       await api.delete(`/pagamentos/${confirmDelete}`);
-      setPagamentos(pagamentos.filter(pagamento => pagamento.id !== confirmDelete));
+      // Reload data after delete to reflect changes and pagination
+      carregarPagamentos(filtro, paginaAtual, itensPorPagina, ordenacao);
       setConfirmDelete(null);
     } catch (err) {
       setError('Erro ao excluir pagamento');
+      setConfirmDelete(null); // Close modal even on error
     }
   };
-  
-  // Função para formatar valores em moeda local
-  const formatarMoeda = (valor) => {
-    return parseFloat(valor).toLocaleString('pt-MZ', {
-      style: 'currency',
-      currency: 'MZN'
-    });
-  };
-  
-  // Função para formatar a data
-  const formatarData = (data) => {
-    if (!data) return '-';
-    return new Date(data).toLocaleDateString('pt-MZ');
-  };
-  
-  // Função para obter o nome do mês a partir do número
+
+  // REMOVED local formatarMoeda and formatarData, using imported ones
+
+  // ... getNomeMes remains the same ...
   const getNomeMes = (mesNumero) => {
     const mes = meses.find(m => m.valor === parseInt(mesNumero));
     return mes ? mes.nome : '-';
   };
-  
-  // Função para obter pagamentos da página atual
-  const getPagamentosPaginados = () => {
-    const inicio = (paginaAtual - 1) * itensPorPagina;
-    const fim = inicio + itensPorPagina;
-    return pagamentos.slice(inicio, fim);
-  };
-  
-  // Gerar botões de paginação
+
+  // REMOVED getPagamentosPaginados, data is now fetched paginated
+
+  // ... renderizarBotoesPaginacao remains the same ...
   const renderizarBotoesPaginacao = () => {
     const botoes = [];
     
-    // Botão para a primeira página
     botoes.push(
       <button
         key="first"
@@ -480,7 +416,6 @@ const PagamentosList = () => {
       </button>
     );
     
-    // Botão para página anterior
     botoes.push(
       <button
         key="prev"
@@ -496,7 +431,6 @@ const PagamentosList = () => {
       </button>
     );
     
-    // Botões para páginas específicas
     let startPage = Math.max(1, paginaAtual - 2);
     let endPage = Math.min(totalPaginas, startPage + 4);
     
@@ -520,7 +454,6 @@ const PagamentosList = () => {
       );
     }
     
-    // Botão para próxima página
     botoes.push(
       <button
         key="next"
@@ -536,7 +469,6 @@ const PagamentosList = () => {
       </button>
     );
     
-    // Botão para a última página
     botoes.push(
       <button
         key="last"
@@ -554,8 +486,8 @@ const PagamentosList = () => {
     
     return botoes;
   };
-  
-  // Renderizar ícone de ordenação
+
+  // ... renderSortIcon remains the same ...
   const renderSortIcon = (campo) => {
     if (ordenacao.campo !== campo) {
       return (
@@ -579,7 +511,8 @@ const PagamentosList = () => {
       );
     }
   };
-  
+
+  // ... Loading display remains the same ...
   if (loading && pagamentos.length === 0) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -587,10 +520,10 @@ const PagamentosList = () => {
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-6">
-      {/* Cabeçalho da Página */}
+      {/* ... Header ... */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Pagamentos</h2>
@@ -617,7 +550,7 @@ const PagamentosList = () => {
           </button>
         </div>
       </div>
-      
+      {/* ... Error Alert ... */}
       {error && (
         <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md">
           <div className="flex">
@@ -632,8 +565,7 @@ const PagamentosList = () => {
           </div>
         </div>
       )}
-      
-      {/* Filtros */}
+      {/* ... FilterCard ... */}
       <FilterCard 
         provincias={provincias}
         pacs={pacs}
@@ -644,8 +576,7 @@ const PagamentosList = () => {
         meses={meses}
         anos={anos}
       />
-      
-      {/* Barra de pesquisa rápida e seleção de itens por página */}
+      {/* ... Search Bar and Items per Page ... */}
       <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-lg shadow-md">
         <div className="w-full md:w-auto mb-4 md:mb-0">
           <div className="relative">
@@ -653,7 +584,7 @@ const PagamentosList = () => {
               type="text"
               value={buscaRapida}
               onChange={handleBuscaRapida}
-              placeholder="Busca rápida..."
+              placeholder="Busca rápida (PAC, Província...)" // Updated placeholder
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <div className="absolute left-3 top-2.5">
@@ -667,24 +598,30 @@ const PagamentosList = () => {
           <span className="text-sm text-gray-600">Mostrar</span>
           <select
             value={itensPorPagina}
-            onChange={(e) => setItensPorPagina(Number(e.target.value))}
+            onChange={(e) => {
+              const novoLimite = Number(e.target.value);
+              setItensPorPagina(novoLimite);
+              setPaginaAtual(1); // Reset page when changing limit
+              // Reload data is handled by useEffect dependency
+            }}
             className="border border-gray-300 rounded px-2 py-1 text-sm"
           >
-            <option value="5">5</option>
             <option value="10">10</option>
             <option value="25">25</option>
             <option value="50">50</option>
+            <option value="100">100</option> {/* Added 100 */}
           </select>
           <span className="text-sm text-gray-600">itens por página</span>
         </div>
       </div>
-      
+
       {/* Tabela de Pagamentos */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full bg-white">
             <thead className="bg-gray-50">
               <tr>
+                {/* PAC Header */}
                 <th 
                   onClick={() => alterarOrdenacao('pac.nome')} 
                   className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -694,6 +631,7 @@ const PagamentosList = () => {
                     {renderSortIcon('pac.nome')}
                   </div>
                 </th>
+                {/* Província Header */}
                 <th 
                   onClick={() => alterarOrdenacao('pac.provincia.nome')}
                   className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -703,33 +641,57 @@ const PagamentosList = () => {
                     {renderSortIcon('pac.provincia.nome')}
                   </div>
                 </th>
+                {/* Período Header */}
                 <th 
-                  onClick={() => alterarOrdenacao('mes_referencia')}
+                  onClick={() => alterarOrdenacao('ano_referencia')} // Sort by year first, then month implicitly
                   className="py-3 px-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   <div className="flex items-center justify-center">
                     Período
-                    {renderSortIcon('mes_referencia')}
+                    {renderSortIcon('ano_referencia')}
                   </div>
                 </th>
+                {/* Valor Devido Header (Added) */}
                 <th 
-                  onClick={() => alterarOrdenacao('valor_pago')}
+                  onClick={() => alterarOrdenacao('valor_devido')}
                   className="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   <div className="flex items-center justify-end">
-                    Valor Pago
-                    {renderSortIcon('valor_pago')}
+                    Valor Devido
+                    {renderSortIcon('valor_devido')}
                   </div>
                 </th>
+                {/* Valor Efetuado Header (Renamed) */}
+                <th 
+                  onClick={() => alterarOrdenacao('valor_efetuado')}
+                  className="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  <div className="flex items-center justify-end">
+                    Valor Efetuado
+                    {renderSortIcon('valor_efetuado')}
+                  </div>
+                </th>
+                {/* Valor Multa Header (Added) */}
+                <th 
+                  onClick={() => alterarOrdenacao('valor_multa')}
+                  className="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  <div className="flex items-center justify-end">
+                    Multa
+                    {renderSortIcon('valor_multa')}
+                  </div>
+                </th>
+                {/* Data Pagamento Header */}
                 <th 
                   onClick={() => alterarOrdenacao('data_pagamento')}
                   className="py-3 px-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   <div className="flex items-center justify-center">
-                    Data Pagamento
+                    Data Pag.
                     {renderSortIcon('data_pagamento')}
                   </div>
                 </th>
+                {/* Status Header */}
                 <th 
                   onClick={() => alterarOrdenacao('status')}
                   className="py-3 px-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -739,41 +701,73 @@ const PagamentosList = () => {
                     {renderSortIcon('status')}
                   </div>
                 </th>
+                 {/* Comprovativo Header (Added) */}
+                 <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Comp.
+                </th>
+                {/* Ações Header */}
                 <th className="py-3 px-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Ações
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {getPagamentosPaginados().length > 0 ? (
-                getPagamentosPaginados().map(pagamento => (
+              {pagamentos.length > 0 ? (
+                pagamentos.map(pagamento => (
                   <tr key={pagamento.id} className="hover:bg-gray-50">
-                    <td className="py-3 px-4 text-sm text-gray-800">{pagamento.pac?.nome || '-'}</td>
-                    <td className="py-3 px-4 text-sm text-gray-600">{pagamento.pac?.provincia?.nome || '-'}</td>
-                    <td className="py-3 px-4 text-center text-sm text-gray-600">
+                    <td className="py-3 px-4 text-sm text-gray-800 whitespace-nowrap">{pagamento.pac?.nome || '-'}</td>
+                    <td className="py-3 px-4 text-sm text-gray-600 whitespace-nowrap">{pagamento.pac?.provincia?.nome || '-'}</td>
+                    <td className="py-3 px-4 text-center text-sm text-gray-600 whitespace-nowrap">
                       {getNomeMes(pagamento.mes_referencia)}/{pagamento.ano_referencia}
                     </td>
-                    <td className="py-3 px-4 text-right text-sm font-medium text-gray-800">
-                      {formatarMoeda(pagamento.valor_pago || 0)}
+                    {/* Valor Devido Cell (Added) */}
+                    <td className="py-3 px-4 text-right text-sm font-medium text-gray-800 whitespace-nowrap">
+                      {formatarMoeda(pagamento.valor_devido)}
                     </td>
-                    <td className="py-3 px-4 text-center text-sm text-gray-600">
+                    {/* Valor Efetuado Cell (Renamed) */}
+                    <td className="py-3 px-4 text-right text-sm font-medium text-blue-700 whitespace-nowrap">
+                      {formatarMoeda(pagamento.valor_efetuado)}
+                    </td>
+                    {/* Valor Multa Cell (Added) */}
+                    <td className="py-3 px-4 text-right text-sm font-medium text-red-600 whitespace-nowrap">
+                      {formatarMoeda(pagamento.valor_multa)}
+                    </td>
+                    {/* Data Pagamento Cell */}
+                    <td className="py-3 px-4 text-center text-sm text-gray-600 whitespace-nowrap">
                       {formatarData(pagamento.data_pagamento)}
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    {/* Status Cell */}
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
                       <StatusBadge status={pagamento.status} />
                     </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex justify-center space-x-2">
-                        <button 
+                    {/* Comprovativo Cell (Added) */}
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                      {pagamento.comprovativo_url ? (
+                        <a 
+                          href={`${api.defaults.baseURL}${pagamento.comprovativo_url}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 inline-block p-1" 
+                          title="Ver Comprovativo"
+                        >
+                          <DownloadSimple size={20} />
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    {/* Ações Cell */}
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                      <div className="flex justify-center space-x-1">
+                        {/* View Button - Consider removing if details are in the list */}
+                        {/* <button 
                           onClick={() => navigate(`/pagamentos/${pagamento.id}`)}
                           className="text-blue-600 hover:text-blue-800 p-1"
                           title="Ver detalhes"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </button>
+                          <svg>...</svg>
+                        </button> */}
+                        {/* Edit Button */}
                         <button 
                           onClick={() => navigate(`/pagamentos/editar/${pagamento.id}`)}
                           className="text-green-600 hover:text-green-800 p-1"
@@ -783,6 +777,7 @@ const PagamentosList = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </button>
+                        {/* Delete Button */}
                         <button 
                           onClick={() => handleExcluirPagamento(pagamento.id)}
                           className="text-red-600 hover:text-red-800 p-1"
@@ -798,8 +793,8 @@ const PagamentosList = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="py-4 px-4 text-center text-gray-500">
-                    Nenhum pagamento encontrado com os filtros aplicados.
+                  <td colSpan="10" className="py-4 px-4 text-center text-gray-500"> {/* Updated colSpan */} 
+                    {loading ? 'Carregando...' : 'Nenhum pagamento encontrado com os filtros aplicados.'}
                   </td>
                 </tr>
               )}
@@ -807,9 +802,10 @@ const PagamentosList = () => {
           </table>
         </div>
         
-        {/* Paginação */}
-        {pagamentos.length > 0 && (
+        {/* ... Pagination ... */}
+        {pagamentos.length > 0 && totalPaginas > 1 && (
           <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200">
+            {/* ... Mobile Pagination ... */}
             <div className="flex-1 flex justify-between sm:hidden">
               <button
                 onClick={() => mudarPagina(paginaAtual - 1)}
@@ -830,14 +826,16 @@ const PagamentosList = () => {
                 Próximo
               </button>
             </div>
+            {/* ... Desktop Pagination ... */}
             <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm text-gray-700">
-                  Mostrando <span className="font-medium">{pagamentos.length > 0 ? (paginaAtual - 1) * itensPorPagina + 1 : 0}</span> a{' '}
-                  <span className="font-medium">
-                    {Math.min(paginaAtual * itensPorPagina, pagamentos.length)}
-                  </span>{' '}
-                  de <span className="font-medium">{pagamentos.length}</span> resultados
+                  Página <span className="font-medium">{paginaAtual}</span> de <span className="font-medium">{totalPaginas}</span>
+                  {/* Mostrando <span className="font-medium">{pagamentos.length > 0 ? (paginaAtual - 1) * itensPorPagina + 1 : 0}</span> a{' '} */}
+                  {/* <span className="font-medium">
+                    {Math.min(paginaAtual * itensPorPagina, pagamentos.length)} // This calculation is wrong if data is fetched paginated
+                  </span>{' '} */}
+                  {/* de <span className="font-medium">{pagamentos.length}</span> resultados // This is also wrong */}
                 </p>
               </div>
               <div>
@@ -850,7 +848,7 @@ const PagamentosList = () => {
         )}
       </div>
       
-      {/* Modal de confirmação de exclusão */}
+      {/* ... Confirmation Modal ... */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 overflow-auto bg-black bg-opacity-40 flex items-center justify-center">
           <div className="bg-white rounded-lg max-w-md w-full p-6">

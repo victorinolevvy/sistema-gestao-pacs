@@ -64,11 +64,13 @@ app.use(limiter);
 
 // Logging de requisições
 app.use((req, res, next) => {
-  logger.info({
-    method: req.method,
-    path: req.path,
-    ip: req.ip,
-    body: req.body
+  logger.info('Request received', {
+    meta: {
+      method: req.method,
+      path: req.path,
+      ip: req.ip,
+      body: req.body
+    }
   });
   next();
 });
@@ -111,12 +113,14 @@ app.get('/health', (req, res) => {
 
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {
-  logger.error('Erro:', {
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-    body: req.body
+  logger.error('Error occurred', {
+    meta: {
+      error: err.message,
+      stack: err.stack,
+      path: req.path,
+      method: req.method,
+      body: req.body
+    }
   });
 
   const statusCode = err.statusCode || 500;

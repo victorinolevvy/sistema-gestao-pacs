@@ -1,36 +1,37 @@
-const { Pac, Pagamento, Usuario } = require('../models'); // Corrigido de PAC para Pac
+const { Pac, Pagamento, Usuario } = require('../models');
+const logger = require('../config/logger');
 
 const getDashboardData = async (req, res) => {
   try {
-    console.log('Iniciando busca de dados do dashboard...');
+    logger.info('Iniciando busca de dados do dashboard...');
     
     // Contagem de PACs
-    console.log('Buscando contagem de PACs...');
-    const totalPacs = await Pac.count(); // Usar Pac
-    const pacsPendentes = await Pac.count({ where: { status: 'pendente' } }); // Usar Pac
-    const pacsAprovados = await Pac.count({ where: { status: 'aprovado' } }); // Usar Pac
-    const pacsRejeitados = await Pac.count({ where: { status: 'rejeitado' } }); // Usar Pac
-    console.log('Contagem de PACs:', { totalPacs, pacsPendentes, pacsAprovados, pacsRejeitados });
+    logger.debug('Buscando contagem de PACs...');
+    const totalPacs = await Pac.count();
+    const pacsPendentes = await Pac.count({ where: { status: 'pendente' } });
+    const pacsAprovados = await Pac.count({ where: { status: 'aprovado' } });
+    const pacsRejeitados = await Pac.count({ where: { status: 'rejeitado' } });
+    logger.info('Contagem de PACs:', { totalPacs, pacsPendentes, pacsAprovados, pacsRejeitados });
 
     // Contagem de pagamentos
-    console.log('Buscando contagem de pagamentos...');
+    logger.debug('Buscando contagem de pagamentos...');
     const totalPagamentos = await Pagamento.count();
     const pagamentosPendentes = await Pagamento.count({ where: { status: 'pendente' } });
     const pagamentosConfirmados = await Pagamento.count({ where: { status: 'confirmado' } });
-    console.log('Contagem de pagamentos:', { totalPagamentos, pagamentosPendentes, pagamentosConfirmados });
+    logger.info('Contagem de pagamentos:', { totalPagamentos, pagamentosPendentes, pagamentosConfirmados });
 
     // Atividades recentes
-    console.log('Buscando atividades recentes...');
+    logger.debug('Buscando atividades recentes...');
     const atividadesRecentes = await Pac.findAll({
       limit: 5,
       order: [['data_criacao', 'DESC']],
       include: [{
         model: Usuario,
-        as: 'gestor', // usar alias definido nos models
+        as: 'gestorAtual',
         attributes: ['nome']
       }]
     });
-    console.log('Atividades recentes encontradas:', atividadesRecentes.length);
+    logger.info('Atividades recentes encontradas:', { count: atividadesRecentes.length });
 
     const response = {
       estatisticas: {
@@ -48,18 +49,18 @@ const getDashboardData = async (req, res) => {
       },
       atividadesRecentes: atividadesRecentes.map(atividade => ({
         id: atividade.id,
-        titulo: atividade.nome, // Usar nome do Pac como título (ou outro campo apropriado)
+        titulo: atividade.nome,
         status: atividade.status,
-        data: atividade.data_criacao, // Usar data_criacao
-        usuario: atividade.gestor ? atividade.gestor.nome : 'Usuário Desconhecido' // Corrected to use 'gestor' alias
+        data: atividade.data_criacao,
+        usuario: atividade.gestorAtual ? atividade.gestorAtual.nome : 'Usuário Desconhecido'
       }))
     };
 
-    console.log('Dados do dashboard preparados:', response);
+    logger.debug('Dados do dashboard preparados:', { responseLength: JSON.stringify(response).length });
     res.json(response);
   } catch (error) {
-    console.error('Erro ao buscar dados do dashboard:', error);
-    res.status(500).json({ error: 'Erro ao buscar dados do dashboard' });
+    logger.error('Erro ao buscar dados do dashboard:', { error: error.message, stack: error.stack });
+    res.status(500).json({ message: 'Erro ao buscar dados do dashboard' });
   }
 };
 

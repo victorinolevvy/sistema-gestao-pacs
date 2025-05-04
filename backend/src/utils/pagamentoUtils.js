@@ -4,7 +4,8 @@ const {
     setDate,
     endOfDay,
     parseISO,
-    isValid
+    isValid,
+    startOfDay
 } = require('date-fns');
 
 /**
@@ -90,7 +91,7 @@ const calcularDetalhesAtrasoMulta = (dataPagamentoInput, mesReferencia, anoRefer
  * Determina o status do pagamento comparando o valor pago com o valor devido.
  * @param {number | string} valorPagoInput - O valor total pago.
  * @param {number | string} valorDevidoInput - O valor total devido (renda + multa).
- * @returns {string} - Status do pagamento (PENDENTE, PAGO_PARCIAL, PAGO, N/A)
+ * @returns {string} - Status do pagamento (PENDENTE, PAGO_PARCIAL, PAGO)
  */
 const determinarStatusPagamento = (valorPagoInput, valorDevidoInput) => {
     const valorPago = parseFloat(valorPagoInput || 0);
@@ -99,7 +100,7 @@ const determinarStatusPagamento = (valorPagoInput, valorDevidoInput) => {
     if (valorDevido <= 0) {
         // Se não há valor devido (renda 0 e sem multa), considera pago se algo foi pago, senão N/A?
         // Ou talvez sempre PAGO se devido é 0? Vamos considerar PAGO.
-        return 'PAGO'; // Ou 'N/A' dependendo da regra de negócio
+        return valorPago > 0 ? 'PAGO' : 'PENDENTE'; // Ou 'PAGO' sempre se devido <= 0
     }
 
     // Usar uma pequena tolerância para comparações de ponto flutuante
@@ -113,8 +114,103 @@ const determinarStatusPagamento = (valorPagoInput, valorDevidoInput) => {
     }
 };
 
+/**
+ * Calcula a multa por atraso com base nas regras especificadas (cumulative based on days late).
+ *
+ * Regras:
+ * - Vencimento: Dia 5 do mês seguinte ao de referência.
+ * - Até dia 5 do M+1: 0%
+ * - Dia 6 do M+1 até Dia 5 do M+1 + 30 dias: 5%
+ * - Após Dia 5 do M+1 + 30 dias até Dia 5 do M+1 + 60 dias: +10% (Total 15%)
+ * - Após Dia 5 do M+1 + 60 dias até Dia 5 do M+1 + 90 dias: +15% (Total 30%)
+ * - Para cada 30 dias subsequentes: +15%
+ *
+ * @param {number} mesReferencia Mês de referência do pagamento (1-12).
+ * @param {number} anoReferencia Ano de referência do pagamento.
+ * @param {Date} dataPagamento Data em que o pagamento foi efetuado.
+ * @param {number} valorRendaMensal O valor base da renda mensal do PAC.
+ * @returns {number} O valor da multa calculada.
+ */
+function calcularMulta(mesReferencia, anoReferencia, dataPagamento, valorRendaMensal) {
+    if (!valorRendaMensal || valorRendaMensal <= 0) {
+        return 0; // Sem renda, sem multa
+    }
+
+    // Validar entradas
+    if (!mesReferencia || !anoReferencia || !dataPagamento || !(dataPagamento instanceof Date) || isNaN(dataPagamento)) {
+        console.error("Entradas inválidas para calcularMulta", { mesReferencia, anoReferencia, dataPagamento, valorRendaMensal });
+        return 0; // Retorna 0 em caso de erro de entrada
+    }
+
+    // Normalizar datas para início do dia para evitar problemas com horas/minutos
+    const dtPagamento = startOfDay(dataPagamento);
+
+    // Data limite para pagamento sem multa: dia 5 do mês SEGUINTE ao mês de referência
+    // Mês em Date() é 0-indexado, então `mesReferencia` (1-12) já aponta para o mês seguinte.
+    const dataLimiteSemMulta = startOfDay(new Date(anoReferencia, mesReferencia, 5));
+
+    // Se o pagamento foi feito ATÉ a data limite, não há multa
+    if (dtPagamento <= dataLimiteSemMulta) {
+        return 0;
+    }
+
+    // --- Cálculo da Multa baseado em dias de atraso ---
+    const diasDeAtraso = differenceInCalendarDays(dtPagamento, dataLimiteSemMulta);
+    let percentualMultaTotal = 0;
+    const valorBase = parseFloat(valorRendaMensal);
+
+    if (diasDeAtraso <= 0) { // Double check, should be covered above
+        return 0;
+    }
+
+    // Faixa 1: 1 a 30 dias de atraso
+    if (diasDeAtraso >= 1) {
+        percentualMultaTotal = 0.05; // 5%
+    }
+
+    // Faixa 2: 31 a 60 dias de atraso
+    if (diasDeAtraso >= 31) {
+        percentualMultaTotal += 0.10; // +10% (Total 15%)
+    }
+
+    // Faixa 3: 61 a 90 dias de atraso
+    if (diasDeAtraso >= 61) {
+        percentualMultaTotal += 0.15; // +15% (Total 30%)
+    }
+
+    // Faixas subsequentes: +15% a cada 30 dias após 90 dias
+    if (diasDeAtraso >= 91) {
+        // Calcular quantos períodos completos de 30 dias se passaram *após* os primeiros 90 dias
+        const diasApos90 = diasDeAtraso - 90;
+        const periodosAdicionaisDe30Dias = Math.floor((diasApos90 -1) / 30) + 1; // +1 because >= 91 already counts
+        percentualMultaTotal += periodosAdicionaisDe30Dias * 0.15;
+    }
+
+
+    // Calcula o valor final da multa
+    const valorMulta = valorBase * percentualMultaTotal;
+
+    // Arredonda para 2 casas decimais (importante para valores monetários)
+    return Math.round(valorMulta * 100) / 100;
+}
+
+/**
+ * Calcula o valor total devido, somando a renda base e a multa.
+ *
+ * @param {number} valorRendaMensal O valor base da renda.
+ * @param {number} valorMulta O valor da multa calculado.
+ * @returns {number} O valor total devido.
+ */
+function calcularValorDevido(valorRendaMensal, valorMulta) {
+    const renda = parseFloat(valorRendaMensal || 0);
+    const multa = parseFloat(valorMulta || 0);
+    const devido = renda + multa;
+    return Math.round(devido * 100) / 100; // Arredonda para 2 casas decimais
+}
 
 module.exports = {
     calcularDetalhesAtrasoMulta,
-    determinarStatusPagamento
+    determinarStatusPagamento, // Export the function
+    calcularMulta,
+    calcularValorDevido
 };

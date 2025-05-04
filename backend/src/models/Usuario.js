@@ -70,6 +70,20 @@ const Usuario = sequelize.define('Usuario', {
   }
 });
 
+// Define associations within the model file
+Usuario.associate = (models) => {
+  // Existing associations (if any)
+  Usuario.hasMany(models.Pagamento, { foreignKey: 'usuario_id', as: 'pagamentosRegistrados' });
+  Usuario.hasMany(models.Pagamento, { foreignKey: 'confirmado_por_usuario_id', as: 'pagamentosConfirmados' });
+  Usuario.hasMany(models.Pac, { foreignKey: 'gestor_id', as: 'pacsGeridos', sourceKey: 'id' }); // PACs currently managed
+
+  // New association with PacGestorContrato
+  Usuario.hasMany(models.PacGestorContrato, {
+    foreignKey: 'gestor_id',
+    as: 'contratosComoGestor' // Alias for the history of contracts as manager
+  });
+};
+
 // Método para verificar senha
 Usuario.prototype.verificarSenha = async function(senha) {
   return await bcrypt.compare(senha, this.senha);

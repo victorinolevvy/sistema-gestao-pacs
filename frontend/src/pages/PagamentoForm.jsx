@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // Added useRef for file input
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -18,23 +18,35 @@ import {
 } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import { formatarMoeda } from '../utils/formatters'; // Changed import name
 
 const PagamentoForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const isEditMode = !!id;
+  const fileInputRef = useRef(null); // Ref for file input
 
   const [formData, setFormData] = useState({
     pac_id: '',
     data_pagamento: new Date().toISOString().split('T')[0],
-    valor_pago: '',
-    valor_regularizado: '',
+    valor_efetuado: '', // Changed from valor_pago/valor_regularizado
     mes_referencia: new Date().getMonth() + 1,
     ano_referencia: new Date().getFullYear(),
     observacoes: '',
-    status: 'Pago',
+    // Removed status
   });
+
+  // State for calculated values (optional, for display)
+  const [calculatedValues, setCalculatedValues] = useState({
+    valor_devido: null,
+    valor_multa: null,
+    status: null,
+  });
+
+  // State for file upload
+  const [comprovativoFile, setComprovativoFile] = useState(null);
+  const [existingComprovativoUrl, setExistingComprovativoUrl] = useState(null);
 
   // State to hold the display name for the user who registered
   const [usuarioRegistroNome, setUsuarioRegistroNome] = useState('');
@@ -92,19 +104,24 @@ const PagamentoForm = () => {
           setFormData({
             pac_id: pagamento.pac_id || '',
             data_pagamento: pagamento.data_pagamento ? pagamento.data_pagamento.substring(0, 10) : new Date().toISOString().split('T')[0],
-            valor_pago: pagamento.valor_pago || '',
-            valor_regularizado: pagamento.valor_regularizado || '',
+            valor_efetuado: pagamento.valor_efetuado || '', // Use valor_efetuado
             mes_referencia: pagamento.mes_referencia || new Date().getMonth() + 1,
             ano_referencia: pagamento.ano_referencia || new Date().getFullYear(),
             observacoes: pagamento.observacoes || '',
-            status: pagamento.status || 'Pago',
+            // Removed status
           });
-          // Set the display name from the fetched data
+          // Set calculated values for display if needed
+          setCalculatedValues({
+            valor_devido: pagamento.valor_devido,
+            valor_multa: pagamento.valor_multa,
+            status: pagamento.status,
+          });
+          setExistingComprovativoUrl(pagamento.comprovativo_url); // Store existing URL
           setUsuarioRegistroNome(pagamento.usuarioRegistro?.nome || 'Desconhecido');
         } else {
-          // Set the display name from the logged-in user context
           setUsuarioRegistroNome(user?.nome || 'Desconhecido');
-          // No need to set usuario_registro in formData
+          setCalculatedValues({ valor_devido: null, valor_multa: null, status: null }); // Reset calculated
+          setExistingComprovativoUrl(null);
         }
 
         setLoading(false);
@@ -131,6 +148,10 @@ const PagamentoForm = () => {
     }
   };
 
+  const handleFileChange = (e) => {
+    setComprovativoFile(e.target.files[0]);
+  };
+
   const handleProvinciaChange = (e) => {
     setFiltroProvinciaId(e.target.value);
 
@@ -141,8 +162,8 @@ const PagamentoForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.pac_id || !formData.mes_referencia || !formData.ano_referencia) {
-      setError('PAC, mês e ano de referência são obrigatórios');
+    if (!formData.pac_id || !formData.mes_referencia || !formData.ano_referencia || formData.valor_efetuado === '') {
+      setError('PAC, mês/ano de referência e valor efetuado são obrigatórios');
       return;
     }
 
@@ -151,47 +172,71 @@ const PagamentoForm = () => {
       setError('');
       setSuccess('');
 
-      const dataToSend = {
-        pac_id: formData.pac_id,
-        data_pagamento: formData.data_pagamento,
-        valor_pago: formData.valor_pago ? parseFloat(formData.valor_pago) : 0,
-        valor_regularizado: formData.valor_regularizado ? parseFloat(formData.valor_regularizado) : 0,
-        mes_referencia: parseInt(formData.mes_referencia),
-        ano_referencia: parseInt(formData.ano_referencia),
-        observacoes: formData.observacoes,
-        status: formData.status
+      // Use FormData to send data including the file
+      const submissionData = new FormData();
+      submissionData.append('pac_id', formData.pac_id);
+      submissionData.append('data_pagamento', formData.data_pagamento);
+      submissionData.append('valor_efetuado', parseFloat(formData.valor_efetuado) || 0);
+      submissionData.append('mes_referencia', parseInt(formData.mes_referencia));
+      submissionData.append('ano_referencia', parseInt(formData.ano_referencia));
+      submissionData.append('observacoes', formData.observacoes);
+      // Do not send status
+
+      // Append file if selected
+      if (comprovativoFile) {
+        submissionData.append('comprovativo', comprovativoFile); // Match backend field name
+      }
+
+      const config = {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       };
 
       if (isEditMode) {
-        await api.put(`/pagamentos/${id}`, dataToSend);
+        // Use POST for update if including file, or PUT if backend supports it with multipart
+        // Check backend route definition - assuming PUT supports multipart for now
+        await api.put(`/pagamentos/${id}`, submissionData, config);
         setSuccess('Pagamento atualizado com sucesso!');
+        // Optionally refetch data to show updated calculated values and comprovativo link
+        const updatedResponse = await api.get(`/pagamentos/${id}`);
+        setCalculatedValues({
+            valor_devido: updatedResponse.data.valor_devido,
+            valor_multa: updatedResponse.data.valor_multa,
+            status: updatedResponse.data.status,
+        });
+        setExistingComprovativoUrl(updatedResponse.data.comprovativo_url);
+        setComprovativoFile(null); // Clear file input state
+        if (fileInputRef.current) fileInputRef.current.value = ''; // Clear file input visually
+
       } else {
-        await api.post('/pagamentos', dataToSend);
+        await api.post('/pagamentos', submissionData, config);
         setSuccess('Pagamento registrado com sucesso!');
 
         // Limpar formulário após criação bem-sucedida
         setFormData({
           pac_id: '',
           data_pagamento: new Date().toISOString().split('T')[0],
-          valor_pago: '',
-          valor_regularizado: '',
+          valor_efetuado: '', // Clear valor_efetuado
           mes_referencia: new Date().getMonth() + 1,
           ano_referencia: new Date().getFullYear(),
           observacoes: '',
-          status: 'Pago',
         });
-        // No need to reset usuarioRegistroNome here, it stays the current user
+        setComprovativoFile(null); // Clear file input state
+        if (fileInputRef.current) fileInputRef.current.value = ''; // Clear file input visually
+        setCalculatedValues({ valor_devido: null, valor_multa: null, status: null }); // Reset calculated
+        setExistingComprovativoUrl(null);
+        // Keep usuarioRegistroNome as current user
       }
 
       setIsSubmitting(false);
     } catch (err) {
       console.error(err);
-      if (err.response && err.response.data.message.includes('já existe um pagamento')) {
-        // Erro de duplicidade
-        setError('Já existe um pagamento registrado para este PAC neste período');
-      } else {
-        setError('Erro ao salvar pagamento');
+      let errorMsg = 'Erro ao salvar pagamento';
+      if (err.response && err.response.data && err.response.data.message) {
+          errorMsg = err.response.data.message;
       }
+      setError(errorMsg);
       setIsSubmitting(false);
     }
   };
@@ -292,6 +337,7 @@ const PagamentoForm = () => {
                   value={formData.data_pagamento}
                   onChange={handleChange}
                   fullWidth
+                  required // Make date required
                   variant="outlined"
                   InputLabelProps={{ shrink: true }}
                 />
@@ -339,71 +385,89 @@ const PagamentoForm = () => {
                 </FormControl>
               </Grid>
 
-              {/* Valor Pago */}
+              {/* Valor Efetuado */}
               <Grid item xs={12} md={6}>
                 <TextField
-                  label="Valor Pago (MZN)"
-                  name="valor_pago"
+                  label="Valor Efetuado (MZN)" // Changed label
+                  name="valor_efetuado" // Changed name
                   type="number"
-                  value={formData.valor_pago}
+                  value={formData.valor_efetuado} // Use new state field
                   onChange={handleChange}
                   fullWidth
+                  required // Make value required
                   variant="outlined"
                   InputProps={{ inputProps: { min: 0, step: 0.01 } }}
                 />
               </Grid>
 
-              {/* Valor Regularizado */}
+              {/* Display Calculated Values (Readonly) */}
               <Grid item xs={12} md={6}>
                 <TextField
-                  label="Valor Regularizado (MZN)"
-                  name="valor_regularizado"
-                  type="number"
-                  value={formData.valor_regularizado}
-                  onChange={handleChange}
+                  label="Valor Devido (Calculado)"
+                  value={calculatedValues.valor_devido !== null ? formatarMoeda(calculatedValues.valor_devido) : '-'}
                   fullWidth
                   variant="outlined"
-                  InputProps={{ inputProps: { min: 0, step: 0.01 } }}
+                  InputProps={{ readOnly: true }}
+                  disabled
                 />
               </Grid>
-
-              {/* Status Pagamento */}
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth variant="outlined">
-                  <InputLabel id="status-pag-label">Status do Pagamento</InputLabel>
-                  <Select
-                    labelId="status-pag-label"
-                    label="Status do Pagamento"
-                    name="status"
-                    value={formData.status}
-                    onChange={handleChange}
-                  >
-                    {/* TODO: Revisar estas opções */}
-                    <MenuItem value="Pago">Pago</MenuItem>
-                    <MenuItem value="Pendente">Pendente</MenuItem>
-                    <MenuItem value="Regularizado">Regularizado</MenuItem>
-                    <MenuItem value="Atrasado">Atrasado</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* Registrado Por */}
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={4}>
                 <TextField
-                  label="Registrado por"
-                  name="usuario_registro_display" // Use a different name to avoid confusion
-                  value={usuarioRegistroNome} // Use the state variable for display
+                  label="Multa (Calculada)"
+                  value={calculatedValues.valor_multa !== null ? formatarMoeda(calculatedValues.valor_multa) : '-'}
                   fullWidth
                   variant="outlined"
-                  InputProps={{
-                    readOnly: true,
-                  }}
+                  InputProps={{ readOnly: true }}
+                  disabled
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Status (Calculado)"
+                  value={calculatedValues.status || '-'}
+                  fullWidth
+                  variant="outlined"
+                  InputProps={{ readOnly: true }}
                   disabled
                 />
               </Grid>
 
+              {/* Registrado Por */}
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="Registrado por"
+                  value={usuarioRegistroNome}
+                  fullWidth
+                  variant="outlined"
+                  InputProps={{ readOnly: true }}
+                  disabled
+                />
+              </Grid>
+
+              {/* Comprovativo Upload */}
+              <Grid item xs={12} md={6}>
+                <InputLabel shrink htmlFor="comprovativo-input">
+                  Comprovativo (Opcional)
+                </InputLabel>
+                <TextField
+                  id="comprovativo-input"
+                  name="comprovativo"
+                  type="file"
+                  onChange={handleFileChange}
+                  fullWidth
+                  variant="outlined"
+                  inputRef={fileInputRef} // Attach ref
+                  sx={{ mt: 1 }}
+                />
+                {existingComprovativoUrl && (
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    Comprovativo atual: <a href={api.defaults.baseURL + existingComprovativoUrl} target="_blank" rel="noopener noreferrer">Ver</a>
+                  </Typography>
+                )}
+              </Grid>
+
               {/* Observações */}
-              <Grid item xs={12}>
+              <Grid item xs={12} md={6}> {/* Adjusted grid size */}
                 <TextField
                   label="Observações"
                   name="observacoes"

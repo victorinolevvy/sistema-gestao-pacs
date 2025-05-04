@@ -15,9 +15,10 @@ import {
   InputLabel,
   CircularProgress,
   Alert,
-  Container // Import Container for consistent layout
+  Container
 } from '@mui/material';
 import api from '../services/api';
+import { format } from 'date-fns'; // Import date-fns for formatting
 
 const PacForm = () => {
   const { id } = useParams();
@@ -26,16 +27,18 @@ const PacForm = () => {
 
   const [formData, setFormData] = useState({
     nome: '',
+    endereco: '', // Add endereco
     provincia_id: '',
-    usuario_id: '', // Campo de seleção para o usuário gestor
+    gestor_id: '', // Use gestor_id consistently
     valor_renda_mensal: '',
-    status: 'Em Operação' // Atualizar status inicial
+    status: 'Em Operação',
+    data_inicio_atividade: format(new Date(), 'yyyy-MM-dd') // Add and initialize
   });
 
   const [provincias, setProvincias] = useState([]);
-  const [gestores, setGestores] = useState([]); // Adicionar estado para gestores
+  const [gestores, setGestores] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Renomear para clareza
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -45,43 +48,41 @@ const PacForm = () => {
         setLoading(true);
         setError('');
 
-        // Load provinces and gestores in parallel
         const [provinciasResponse, gestoresResponse] = await Promise.all([
           api.get('/provincias'),
-          // Ensure the correct URL is used here
-          api.get('/usuarios/gestores')
+          api.get('/usuarios/gestores') // Correct endpoint
         ]);
 
-        console.log('Provincias recebidas:', provinciasResponse.data); // Log para depuração
-        setProvincias(provinciasResponse.data || []); // Garantir que é um array
+        setProvincias(provinciasResponse.data || []);
+        setGestores(gestoresResponse.data || []);
 
-        // Log and set gestores
-        console.log('Gestores recebidos:', gestoresResponse.data); // Log para depuração
-        setGestores(gestoresResponse.data || []); // Garantir que é um array
-
-        // Se for modo de edição, carregar dados do PAC
         if (isEditMode) {
           const pacResponse = await api.get(`/pacs/${id}`);
           const pac = pacResponse.data;
 
+          // Format date if it exists
+          const formattedDate = pac.data_inicio_atividade
+            ? format(new Date(pac.data_inicio_atividade), 'yyyy-MM-dd')
+            : format(new Date(), 'yyyy-MM-dd'); // Default to today if null
+
           setFormData({
             nome: pac.nome || '',
+            endereco: pac.endereco || '', // Load endereco
             provincia_id: pac.provincia_id || '',
-            usuario_id: pac.usuario_id || '', // Carrega o ID do gestor (número)
+            gestor_id: pac.gestor_id || '', // Use gestor_id
             valor_renda_mensal: pac.valor_renda_mensal || '',
-            // Garantir que o status carregado seja uma das opções válidas
             status: [
               'Em Operação',
               'Reabilitação',
               'Construção',
               'Inoperacional'
-            ].includes(pac.status) ? pac.status : 'Em Operação'
+            ].includes(pac.status) ? pac.status : 'Em Operação',
+            data_inicio_atividade: formattedDate // Load formatted date
           });
         }
 
         setLoading(false);
       } catch (err) {
-        // Log the error object for more details
         console.error('Erro ao carregar dados:', err.response || err.message || err);
         setError('Erro ao carregar dados. Verifique a conexão e tente novamente.');
         setLoading(false);
@@ -99,9 +100,10 @@ const PacForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.nome || !formData.provincia_id) {
-      setError('Nome e Província são obrigatórios');
-      return;
+    // Add validation for required fields matching backend - gestor_id removed from required fields
+    if (!formData.nome || !formData.provincia_id || !formData.valor_renda_mensal || !formData.data_inicio_atividade) {
+       setError('Nome, Província, Valor da Renda Mensal e Data de Início são obrigatórios.');
+       return;
     }
 
     try {
@@ -109,41 +111,62 @@ const PacForm = () => {
       setError('');
       setSuccess('');
 
+      // Prepare data, ensuring correct types and field names
       const dataToSend = {
-        ...formData,
-        valor_renda_mensal: formData.valor_renda_mensal ? parseFloat(formData.valor_renda_mensal) : null,
-        provincia_id: parseInt(formData.provincia_id) // Garantir que ID é número
+        nome: formData.nome,
+        endereco: formData.endereco,
+        provincia_id: parseInt(formData.provincia_id),
+        gestor_id: formData.gestor_id ? parseInt(formData.gestor_id) : null, // Allow null gestor_id
+        valor_renda_mensal: parseFloat(formData.valor_renda_mensal),
+        status: formData.status,
+        data_inicio_atividade: formData.data_inicio_atividade // Send date string
       };
 
+      let response;
       if (isEditMode) {
-        await api.put(`/pacs/${id}`, dataToSend);
+        response = await api.put(`/pacs/${id}`, dataToSend, {
+          headers: { 'Cache-Control': 'no-cache' } 
+        });
         setSuccess('PAC atualizado com sucesso!');
       } else {
-        await api.post('/pacs', dataToSend);
+        response = await api.post('/pacs', dataToSend);
         setSuccess('PAC criado com sucesso!');
-
-        // Limpar formulário após criação
+        
+        // Clear form after successful creation
         setFormData({
           nome: '',
+          endereco: '',
           provincia_id: '',
-          usuario_id: '',
+          gestor_id: '',
           valor_renda_mensal: '',
-          status: 'Em Operação'
+          status: 'Em Operação',
+          data_inicio_atividade: format(new Date(), 'yyyy-MM-dd')
         });
       }
 
-      // Opcional: Redirecionar para a lista após salvar
-      setTimeout(() => navigate('/pacs'), 1500); // <-- Descomentado
+      // Atualizar o cache
+      await api.get('/pacs', { headers: { 'Cache-Control': 'no-cache' } });
+      
+      setTimeout(() => navigate('/pacs'), 1500);
 
     } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.error || 'Erro ao salvar PAC. Tente novamente.');
+      console.error('Submit Error:', err.response || err); // Log the full error response
+      // Use the specific message from the backend if available
+      const backendMessage = err.response?.data?.message || 'Erro desconhecido ao salvar PAC.';
+      const validationErrors = err.response?.data?.errors; // Check for validation errors array
+
+      let displayError = backendMessage;
+      if (validationErrors && Array.isArray(validationErrors)) {
+          // Format validation errors if they exist
+          displayError += ': ' + validationErrors.join(', ');
+      }
+
+      setError(displayError);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Mostrar loading inicial
   if (loading) {
     return (
       <Container sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
@@ -186,23 +209,29 @@ const PacForm = () => {
                   fullWidth
                   required
                   variant="outlined"
-                  disabled={isEditMode} // Disable if in edit mode
                 />
               </Grid>
 
               <Grid item xs={12} md={6}>
-                {/* Add minWidth to ensure label fits */}
+                <TextField
+                  label="Endereço (Opcional)"
+                  name="endereco"
+                  value={formData.endereco}
+                  onChange={handleChange}
+                  fullWidth
+                  variant="outlined"
+                />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
                 <FormControl fullWidth required variant="outlined" sx={{ minWidth: 150 }}>
-                  {/* Add htmlFor attribute */}
-                  <InputLabel id="provincia-label" htmlFor="provincia-select">Província</InputLabel>
+                  <InputLabel id="provincia-label">Província</InputLabel>
                   <Select
                     labelId="provincia-label"
-                    id="provincia-select" // Adicionar ID para acessibilidade
                     label="Província"
                     name="provincia_id"
                     value={formData.provincia_id}
                     onChange={handleChange}
-                    disabled={isEditMode} // Disable if in edit mode
                   >
                     <MenuItem value="">
                       <em>Selecione uma província</em>
@@ -216,23 +245,20 @@ const PacForm = () => {
                 </FormControl>
               </Grid>
 
-              {/* Gestor Dropdown - Replacing the old TextField */}
+              {/* Gestor */}
               <Grid item xs={12} md={6}>
                 <FormControl fullWidth variant="outlined" sx={{ minWidth: 150 }}>
-                  {/* Add htmlFor attribute */}
-                  <InputLabel id="gestor-label" htmlFor="gestor-select">Gestor (Opcional)</InputLabel>
+                  <InputLabel id="gestor-label">Gestor (Opcional)</InputLabel>
                   <Select
                     labelId="gestor-label"
-                    id="gestor-select"
                     label="Gestor (Opcional)"
-                    name="usuario_id" // Bind to usuario_id
-                    value={formData.usuario_id} // Use usuario_id from state
+                    name="gestor_id"
+                    value={formData.gestor_id}
                     onChange={handleChange}
                   >
                     <MenuItem value="">
                       <em>Sem Gestor</em>
                     </MenuItem>
-                    {/* Populate with gestores from state */}
                     {Array.isArray(gestores) && gestores.map(gestor => (
                       <MenuItem key={gestor.id} value={gestor.id}>
                         {gestor.nome}
@@ -250,18 +276,33 @@ const PacForm = () => {
                   onChange={handleChange}
                   type="number"
                   fullWidth
+                  required
                   variant="outlined"
                   InputProps={{ inputProps: { min: 0, step: 0.01 } }}
                 />
               </Grid>
 
               <Grid item xs={12} md={6}>
+                <TextField
+                  label="Data Início Atividade"
+                  name="data_inicio_atividade"
+                  type="date"
+                  value={formData.data_inicio_atividade}
+                  onChange={handleChange}
+                  fullWidth
+                  required
+                  variant="outlined"
+                  InputLabelProps={{
+                    shrink: true, // Keep label floated
+                  }}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
                 <FormControl fullWidth variant="outlined">
-                  {/* Add htmlFor attribute */}
-                  <InputLabel id="status-label" htmlFor="status-select">Status</InputLabel>
+                  <InputLabel id="status-label">Status</InputLabel>
                   <Select
                     labelId="status-label"
-                    id="status-select" // Add id attribute
                     label="Status"
                     name="status"
                     value={formData.status}

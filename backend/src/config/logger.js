@@ -21,8 +21,17 @@ const logger = winston.createLogger({
   format: winston.format.combine(
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
-    winston.format.splat(),
-    winston.format.json()
+    winston.format.metadata(),
+    winston.format.json(),
+    winston.format.printf(({ level, message, timestamp, metadata }) => {
+      const meta = metadata.meta || metadata;
+      return JSON.stringify({
+        level,
+        message,
+        timestamp,
+        ...meta
+      });
+    })
   ),
   defaultMeta: { service: 'pacs-backend' },
   transports: [
