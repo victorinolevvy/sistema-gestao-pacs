@@ -97,8 +97,12 @@ const PacsList = () => {
   // Calcular KPIs
   const totalPacs = pacs.length;
   const pacsSemGestor = pacs.filter(pac => !pac.gestor_id).length;
+  
+  // Agrupar PACs por status e obter apenas status existentes
   const pacsPorStatus = pacs.reduce((acc, pac) => {
-    acc[pac.status] = (acc[pac.status] || 0) + 1;
+    if (pac.status) {
+      acc[pac.status] = (acc[pac.status] || 0) + 1;
+    }
     return acc;
   }, {});
 
@@ -160,7 +164,7 @@ const PacsList = () => {
 
       <Box sx={{ mb: 3 }}>
         <Grid container spacing={3}>
-          {/* Card Total de PACs */}
+          {/* Card Total de PACs - Sempre visível */}
           <Grid item xs={12} md={6} lg={3}>
             <Card>
               <CardContent>
@@ -179,7 +183,7 @@ const PacsList = () => {
             </Card>
           </Grid>
 
-          {/* Card PACs sem Gestor */}
+          {/* Card PACs sem Gestor - Sempre visível */}
           <Grid item xs={12} md={6} lg={3}>
             <Card>
               <CardContent>
@@ -198,28 +202,30 @@ const PacsList = () => {
             </Card>
           </Grid>
 
-          {/* Cards de Status */}
-          {Object.entries(statusConfig).map(([status, config]) => (
-            <Grid item xs={12} md={6} lg={3} key={status}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ bgcolor: config.color, mr: 2 }}>
-                      {config.icon}
-                    </Avatar>
-                    <Box>
-                      <Typography variant="h6">
-                        {pacsPorStatus[status] || 0}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        PACs em {status}
-                      </Typography>
+          {/* Cards de Status - Apenas para status existentes */}
+          {Object.entries(pacsPorStatus).map(([status, quantidade]) => 
+            statusConfig[status] && quantidade > 0 ? (
+              <Grid item xs={12} md={6} lg={3} key={status}>
+                <Card>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Avatar sx={{ bgcolor: statusConfig[status].color, mr: 2 }}>
+                        {statusConfig[status].icon}
+                      </Avatar>
+                      <Box>
+                        <Typography variant="h6">
+                          {quantidade}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          PACs em {status}
+                        </Typography>
+                      </Box>
                     </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
+                  </CardContent>
+                </Card>
+              </Grid>
+            ) : null
+          )}
         </Grid>
       </Box>
 
