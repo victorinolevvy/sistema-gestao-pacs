@@ -20,7 +20,10 @@ import {
   InputAdornment,
   Chip,
   CircularProgress,
-  Alert
+  Alert,
+  Autocomplete,
+  Stack,
+  Collapse
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -29,11 +32,13 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Visibility as VisibilityIcon,
+  PersonOff as PersonOffIcon,
   Business as BusinessIcon,
   Construction as ConstructionIcon,
   Engineering as EngineeringIcon,
   DoNotDisturbOn as DoNotDisturbOnIcon,
-  PersonOff as PersonOffIcon
+  FilterList as FilterListIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -46,6 +51,14 @@ const PacsList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filtros, setFiltros] = useState({
+    provincias: [],
+    gestores: [],
+    status: []
+  });
+  const [provincias, setProvincias] = useState([]);
+  const [gestores, setGestores] = useState([]);
 
   useEffect(() => {
     fetchPacs();
@@ -84,12 +97,30 @@ const PacsList = () => {
     fetchPacs(); // Recarregar dados ao navegar
   };
 
-  // Update filter logic to include manager name
-  const filteredPacs = pacs.filter(pac =>
-    pac.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (pac.provincia?.nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (pac.gestorAtual?.nome || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Status disponíveis
+  const statusOptions = ['Em Operação', 'Construção', 'Reabilitação', 'Inoperacional'];
+
+  // Aplicar filtros
+  const filteredPacs = pacs.filter(pac => {
+    const matchSearch = searchTerm ? 
+      pac.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pac.provincia?.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pac.gestorAtual?.nome?.toLowerCase().includes(searchTerm.toLowerCase())
+      : true;
+
+    const matchProvincias = filtros.provincias.length === 0 || 
+      filtros.provincias.some(p => p.id === pac.provincia_id);
+
+    const matchGestores = filtros.gestores.length === 0 || 
+      filtros.gestores.some(g => g.id === pac.gestor_id);
+
+    const matchStatus = filtros.status.length === 0 || 
+      filtros.status.includes(pac.status);
+
+    return matchSearch && matchProvincias && matchGestores && matchStatus;
+  });
+
+  const toggleFilters = () => setShowFilters(!showFilters);
 
   // Define roles que podem criar/editar/excluir PACs
   const canManagePacs = user && ['ADMIN', 'SUPERVISOR'].includes(user.role);
@@ -138,6 +169,23 @@ const PacsList = () => {
     ));
   };
 
+  // Carregar dados para os filtros
+  useEffect(() => {
+    const loadFilterData = async () => {
+      try {
+        const [provinciasRes, gestoresRes] = await Promise.all([
+          api.get('/provincias'),
+          api.get('/usuarios/gestores')
+        ]);
+        setProvincias(provinciasRes.data);
+        setGestores(gestoresRes.data);
+      } catch (error) {
+        console.error('Erro ao carregar dados dos filtros:', error);
+      }
+    };
+    loadFilterData();
+  }, []);
+
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
       <Box sx={{ 
@@ -161,6 +209,122 @@ const PacsList = () => {
           </Button>
         )}
       </Box>
+
+      {/* Seção de Filtros */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+          <TextField
+            fullWidth
+            variant="outlined"
+            placeholder="Buscar PACs..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <Button
+            variant="outlined"
+            startIcon={<FilterListIcon />}
+            onClick={toggleFilters}
+            color={showFilters ? "primary" : "inherit"}
+          >
+            Filtros
+          </Button>
+        </Stack>
+
+        <Collapse in={showFilters}>
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Grid item xs={12} md={4}>
+              <Autocomplete
+                multiple
+                options={provincias}
+                getOptionLabel={(option) => option.nome}
+                value={filtros.provincias}
+                onChange={(_, newValue) => 
+                  setFiltros(prev => ({ ...prev, provincias: newValue }))
+                }
+                renderInput={(params) => (
+                  <TextField {...params} label="Províncias" variant="outlined" />
+                )}
+                renderTags={(value, getTagProps) =>
+                  value.map((option, index) => (
+                    <Chip
+                      label={option.nome}
+                      {...getTagProps({ index })}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ))
+                }
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Autocomplete
+                multiple
+                options={gestores}
+                getOptionLabel={(option) => option.nome}
+                value={filtros.gestores}
+                onChange={(_, newValue) => 
+                  setFiltros(prev => ({ ...prev, gestores: newValue }))
+                }
+                renderInput={(params) => (
+                  <TextField {...params} label="Gestores" variant="outlined" />
+                )}
+                renderTags={(value, getTagProps) =>
+                  value.map((option, index) => (
+                    <Chip
+                      label={option.nome}
+                      {...getTagProps({ index })}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ))
+                }
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Autocomplete
+                multiple
+                options={statusOptions}
+                value={filtros.status}
+                onChange={(_, newValue) => 
+                  setFiltros(prev => ({ ...prev, status: newValue }))
+                }
+                renderInput={(params) => (
+                  <TextField {...params} label="Status" variant="outlined" />
+                )}
+                renderTags={(value, getTagProps) =>
+                  value.map((option, index) => (
+                    <Chip
+                      label={option}
+                      {...getTagProps({ index })}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ))
+                }
+              />
+            </Grid>
+          </Grid>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              variant="outlined"
+              startIcon={<CloseIcon />}
+              onClick={() => {
+                setFiltros({ provincias: [], gestores: [], status: [] });
+                setSearchTerm('');
+              }}
+            >
+              Limpar Filtros
+            </Button>
+          </Box>
+        </Collapse>
+      </Paper>
 
       <Box sx={{ mb: 3 }}>
         <Grid container spacing={3}>
@@ -228,23 +392,6 @@ const PacsList = () => {
           )}
         </Grid>
       </Box>
-
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <TextField
-          fullWidth
-          variant="outlined"
-          placeholder="Buscar PACs..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-        />
-      </Paper>
 
       <TableContainer component={Paper}>
         <Table>
